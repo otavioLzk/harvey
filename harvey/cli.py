@@ -373,16 +373,26 @@ def cmd_export(args):
 def cmd_leads(args):
     """Export discovered businesses as a phone-first lead list (WhatsApp/visit)."""
     from harvey.state import StateManager
+    from harvey.config import load_config
     from harvey.leads import export_leads_csv
 
     async def _leads():
         state = StateManager()
         await state.init_db()
+        persona = load_config().persona
+        sender = args.nome if args.nome is not None else (
+            "" if persona.name == "Harvey" else persona.name)
+        company = args.empresa if args.empresa is not None else (
+            "" if persona.company == "Your Company" else persona.company)
         count = await export_leads_csv(
             state, args.out, whatsapp_only=args.whatsapp,
-            no_website_only=args.no_website,
+            no_website_only=args.no_website, sender=sender, company=company,
+            html_path=args.html,
         )
-        print(f"\n  Exported {count} lead(s) to {args.out}")
+        print(f"\n  Exported {count} lead(s) to {args.out}"
+              + (f" and {args.html}" if args.html else ""))
+        if not sender:
+            print('  Tip: --nome "Seu Nome" signs each message with your name.')
         if count == 0:
             print("  Nothing yet? Run: harvey discover --provider google_places "
                   '--city "Sua Cidade, UF"\n')
@@ -758,6 +768,13 @@ def main():
                      help="Only businesses with a mobile (WhatsApp) number")
     sub.add_argument("--no-website", action="store_true",
                      help="Only businesses without a website")
+    sub.add_argument("--html", default="leads.html",
+                     help="Also write a page with one 'Abrir no WhatsApp' button "
+                          "per lead (default: leads.html; empty to skip)")
+    sub.add_argument("--nome", default=None,
+                     help="Your name, used to sign each message (default: persona.name)")
+    sub.add_argument("--empresa", default=None,
+                     help="Your business name in the message (default: persona.company)")
     sub.set_defaults(func=cmd_leads)
 
     # harvey gmail auth|test

@@ -60,3 +60,25 @@ O `leads.csv` abre direto no Excel e vem ordenado assim: primeiro quem não tem
 site, depois quem tem celular. A coluna `whatsapp_link` abre a conversa no
 WhatsApp (`wa.me`), e `signals` lista os argumentos para a abordagem. Um perfil
 só de Instagram/Facebook conta como "sem site".
+
+## Mensagem pronta para cada lead
+
+`harvey leads` também escreve uma mensagem de primeiro contato em português para
+cada empresa, a partir do sinal mais forte dela (sem site, perfil do Google não
+reivindicado, sem agendamento online etc.). Você envia do seu próprio WhatsApp.
+
+```bash
+harvey leads --nome "Seu Nome" --empresa "Sua Empresa"
+```
+
+- `leads.html`: abra no navegador (ou no celular). Cada empresa tem a mensagem
+  numa caixa que você pode editar e um botão **Abrir no WhatsApp**, que abre a
+  conversa já com o texto digitado. É só revisar e apertar enviar.
+- `leads.csv`: as mesmas mensagens na coluna `whatsapp_message`, e o link com o
+  texto em `whatsapp_link`.
+- Telefone fixo não tem botão, mas a mensagem serve de roteiro para ligar ou
+  visitar.
+
+As mensagens não usam IA: são montadas por regras, então não custam nada e a
+mesma empresa sempre recebe o mesmo texto. Para mudar o tom, edite
+`harvey/br_messages.py`.

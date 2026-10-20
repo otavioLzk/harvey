@@ -124,7 +124,10 @@ async def test_discovery_to_lead_csv(state, monkeypatch):
     assert [r["company_name"] for r in rows] == [
         "Padaria Pão Bom", "Oficina do Zé", "Clínica Sorriso"]
     padaria = rows[0]
-    assert padaria["whatsapp_link"] == "https://wa.me/5516991234567"
+    assert padaria["whatsapp_link"].startswith("https://wa.me/5516991234567?text=")
+    assert "site" in padaria["whatsapp_message"]
+    assert rows[1]["whatsapp_link"] == ""          # landline: no WhatsApp
+    assert rows[1]["whatsapp_message"]             # still a draft for a call or visit
     assert padaria["signals"].startswith("NO_WEBSITE")
     assert padaria["review_count"] == 212
     assert rows[1]["phone_type"] == "landline"
@@ -172,3 +175,45 @@ async def test_serper_places_parses_and_pages():
     assert out[0].has_website is False and out[0].domain == ""
     assert out[-1].domain == "clinica.com.br" and out[-1].review_count == 12
     assert out[-1].source_url == "https://maps.google.com/?cid=99"
+
+
+def test_message_names_the_strongest_signal_and_signs():
+    from harvey.br_messages import compose_message
+    msg = compose_message({"company_name": "Padaria Pão Bom",
+                           "signals": "NO_ONLINE_BOOKING;NO_WEBSITE",
+                           "rating": 4.7, "review_count": 212},
+                          sender="Tavim", company="TS Sites")
+    assert "Padaria Pão Bom" in msg
+    assert "Meu nome é Tavim, da TS Sites." in msg
+    assert "ainda não têm um site" in msg          # NO_WEBSITE wins
+    assert "Nota 4,7 com 212 avaliações" in msg
+    assert msg == compose_message({"company_name": "Padaria Pão Bom",
+                                   "signals": "NO_ONLINE_BOOKING;NO_WEBSITE",
+                                   "rating": 4.7, "review_count": 212},
+                                  sender="Tavim", company="TS Sites")
+
+
+def test_message_without_signals_or_sender_is_still_usable():
+    from harvey.br_messages import compose_message, wa_link
+    msg = compose_message({"company_name": "Oficina do Zé", "rating": 4.0,
+                           "review_count": 3})
+    assert "Meu nome" not in msg and "Nota" not in msg
+    assert msg.endswith("?")
+    link = wa_link("+5516991234567", "Oi, tudo bem?")
+    assert link == "https://wa.me/5516991234567?text=Oi%2C%20tudo%20bem%3F"
+
+
+@pytest.mark.asyncio
+async def test_html_page_escapes_and_has_buttons(state):
+    from harvey.leads import to_html
+    rows = [{"company_name": "Bar <b>do</b> João", "industry": "bar",
+             "phone": "(16) 99123-4567", "address": "Centro", "maps_url": "",
+             "signals": "NO_WEBSITE", "whatsapp_message": "Oi!",
+             "whatsapp_link": "https://wa.me/5516991234567?text=Oi%21"},
+            {"company_name": "Fixo", "industry": "", "phone": "(16) 3322-1100",
+             "address": "", "maps_url": "", "signals": "",
+             "whatsapp_message": "Oi!", "whatsapp_link": ""}]
+    page = to_html(rows)
+    assert "Bar &lt;b&gt;do&lt;/b&gt; João" in page
+    assert page.count("Abrir no WhatsApp") == 1
+    assert "sem site" in page and "Leads (2)" in page
