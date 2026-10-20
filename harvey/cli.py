@@ -370,6 +370,28 @@ def cmd_export(args):
     asyncio.run(_export())
 
 
+def cmd_leads(args):
+    """Export discovered businesses as a phone-first lead list (WhatsApp/visit)."""
+    from harvey.state import StateManager
+    from harvey.leads import export_leads_csv
+
+    async def _leads():
+        state = StateManager()
+        await state.init_db()
+        count = await export_leads_csv(
+            state, args.out, whatsapp_only=args.whatsapp,
+            no_website_only=args.no_website,
+        )
+        print(f"\n  Exported {count} lead(s) to {args.out}")
+        if count == 0:
+            print("  Nothing yet? Run: harvey discover --provider google_places "
+                  '--city "Sua Cidade, UF"\n')
+        else:
+            print("  Sorted: no website first, then WhatsApp-reachable numbers.\n")
+
+    asyncio.run(_leads())
+
+
 def cmd_gmail(args):
     """Gmail provider utilities (auth / test)."""
     from harvey.config import load_env
@@ -726,6 +748,17 @@ def main():
     sub.add_argument("--status", default="", help="Comma-separated pipeline statuses (e.g. new,queued)")
     sub.add_argument("--all", action="store_true", help="Export everything, no filters")
     sub.set_defaults(func=cmd_export)
+
+    # harvey leads
+    sub = subparsers.add_parser(
+        "leads", help="Export businesses as a phone/WhatsApp lead list (CSV)"
+    )
+    sub.add_argument("--out", default="leads.csv", help="Output file (default: leads.csv)")
+    sub.add_argument("--whatsapp", action="store_true",
+                     help="Only businesses with a mobile (WhatsApp) number")
+    sub.add_argument("--no-website", action="store_true",
+                     help="Only businesses without a website")
+    sub.set_defaults(func=cmd_leads)
 
     # harvey gmail auth|test
     sub = subparsers.add_parser("gmail", help="Gmail provider setup")

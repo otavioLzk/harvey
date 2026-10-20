@@ -588,9 +588,106 @@ class OpenStreetMap(DiscoveryProvider):
         return out
 
 
+class GooglePlaces(DiscoveryProvider):
+    """Google Maps listings via the Places API (New) — the best source for
+    Brazilian local businesses, including the ones with no website at all.
+
+    Returns phone, website, rating and address per place. A place whose
+    "website" is only an Instagram/Facebook page counts as having no site.
+    """
+
+    key = "google_places"
+    label = "Google Places (Maps)"
+    kind = "listings"
+    blurb = ("Google Maps data: name, phone, website, rating, address. The "
+             "most complete source for local businesses in Brazil.")
+    cost_note = "~$0.035 per search request (20 results each); Google gives a monthly free allowance"
+    free_tier = "monthly free usage on the Text Search Enterprise SKU; needs a billing account"
+    signup_url = "https://console.cloud.google.com/apis/library/places.googleapis.com"
+    env_keys = ("google_places_api_key",)
+    caveat = ("Enable 'Places API (New)' and billing in Google Cloud. Max 60 "
+              "results per search, so Harvey queries each term x city; check "
+              "Google's current pricing before large runs.")
+
+    URL = "https://places.googleapis.com/v1/places:searchText"
+    FIELDS = ",".join((
+        "places.id", "places.displayName", "places.formattedAddress",
+        "places.nationalPhoneNumber", "places.internationalPhoneNumber",
+        "places.websiteUri", "places.rating", "places.userRatingCount",
+        "places.businessStatus", "places.primaryTypeDisplayName",
+        "places.googleMapsUri", "nextPageToken",
+    ))
+    PAGE_SIZE = 20
+    MAX_PAGES = 3
+    COST_PER_REQUEST = 0.035
+    SOCIAL = ("instagram.com", "facebook.com", "fb.com", "linktr.ee",
+              "wa.me", "whatsapp.com", "linkin.bio", "beacons.ai")
+
+    def estimate(self, queries):
+        pages = lambda q: min(self.MAX_PAGES, max(1, -(-q.limit // self.PAGE_SIZE)))
+        return sum(self.COST_PER_REQUEST * pages(q) for q in queries)
+
+    async def fetch(self, client, env, query):
+        headers = {"X-Goog-Api-Key": env["google_places_api_key"],
+                   "X-Goog-FieldMask": self.FIELDS,
+                   "Content-Type": "application/json"}
+        body = {"textQuery": query.keyword(), "languageCode": "pt-BR",
+                "regionCode": "BR", "pageSize": self.PAGE_SIZE}
+        if query.coordinate:
+            lat, lng, radius_km = (query.coordinate.split(",") + ["", "", ""])[:3]
+            body["locationBias"] = {"circle": {
+                "center": {"latitude": float(lat), "longitude": float(lng)},
+                "radius": min(50000.0, float(radius_km or 25) * 1000)}}
+
+        out: list[Business] = []
+        for _ in range(self.MAX_PAGES):
+            r = await client.post(self.URL, headers=headers, json=body)
+            r.raise_for_status()
+            self.last_cost += self.COST_PER_REQUEST
+            data = r.json()
+            for place in data.get("places") or []:
+                biz = self._parse(place, query)
+                if biz:
+                    out.append(biz)
+            token = data.get("nextPageToken")
+            if not token or len(out) >= query.limit:
+                break
+            body["pageToken"] = token
+        return out[:query.limit]
+
+    def _parse(self, place: dict, query) -> "Business | None":
+        if place.get("businessStatus") in ("CLOSED_PERMANENTLY", "CLOSED_TEMPORARILY"):
+            return None
+        name = (place.get("displayName") or {}).get("text") or ""
+        if not name:
+            return None
+        site = place.get("websiteUri") or ""
+        domain = normalize_domain(site)
+        if any(domain == s or domain.endswith("." + s) for s in self.SOCIAL):
+            domain = ""        # a social page is not a website
+        pid = place.get("id") or ""
+        return Business(
+            name=name,
+            domain=domain,
+            website=site if domain else "",
+            phone=place.get("nationalPhoneNumber") or place.get("internationalPhoneNumber") or "",
+            address=place.get("formattedAddress") or "",
+            # The full street address, so the lead list says where to go.
+            location=place.get("formattedAddress") or query.location,
+            category=(place.get("primaryTypeDisplayName") or {}).get("text") or "",
+            rating=place.get("rating"),
+            review_count=place.get("userRatingCount"),
+            has_website=bool(domain),
+            external_id=f"google_places:{pid}" if pid else "",
+            source_url=place.get("googleMapsUri") or "",
+            provider=self.key,
+        )
+
+
 PROVIDERS: dict[str, DiscoveryProvider] = {
     p.key: p for p in (
         OpenStreetMap(),
+        GooglePlaces(),
         DataForSEOListings(),
         DataForSEOSerp(),
         Serper(),
