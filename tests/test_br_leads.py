@@ -134,3 +134,41 @@ async def test_discovery_to_lead_csv(state, monkeypatch):
 
     parsed = list(csv.DictReader(io.StringIO(to_csv(rows))))
     assert parsed[0]["address"].startswith("Rua X")
+
+
+def test_osm_understands_portuguese_trades_without_accents():
+    osm = D.OpenStreetMap()
+    assert osm._tags("Padaria") == ["shop=bakery"]
+    assert osm._tags("salão de beleza") == ["shop=hairdresser", "shop=beauty"]
+    assert osm._tags("barbearia") == ["shop=hairdresser"]
+    assert osm._tags("clínica veterinária") == ["amenity=veterinary"]
+    assert osm._tags("oficina mecânica") == ["shop=car_repair"]
+    assert osm._tags("roofing contractor") == ["craft=roofer", "shop=roofing"]
+
+
+@pytest.mark.asyncio
+async def test_serper_places_parses_and_pages():
+    page1 = {"places": [
+        {"title": f"Loja {i}", "phoneNumber": "(16) 99123-45%02d" % i,
+         "address": "Centro", "cid": str(i),
+         "website": "https://instagram.com/x" if i == 0 else ""}
+        for i in range(20)]}
+    page2 = {"places": [{"title": "Clínica", "phoneNumber": "(16) 3322-1100",
+                         "website": "https://clinica.com.br", "cid": "99",
+                         "rating": 4.5, "ratingCount": 12}]}
+    pages, seen = [page1, page2], []
+
+    def handler(request):
+        body = json.loads(request.content)
+        seen.append(body)
+        assert body["gl"] == "br" and request.headers["X-API-KEY"] == "k"
+        return httpx.Response(200, json=pages[body["page"] - 1])
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    provider = D.SerperPlaces()
+    out = await provider.fetch(client, {"serper_api_key": "k"},
+                               D.DiscoveryQuery(term="loja", location="Franca, SP"))
+    assert len(out) == 21 and len(seen) == 2
+    assert out[0].has_website is False and out[0].domain == ""
+    assert out[-1].domain == "clinica.com.br" and out[-1].review_count == 12
+    assert out[-1].source_url == "https://maps.google.com/?cid=99"

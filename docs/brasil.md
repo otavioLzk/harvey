@@ -4,7 +4,36 @@ Lista de empresas da sua cidade com telefone, se o número tem WhatsApp
 (celular) e o motivo concreto para abordar: sem site, perfil do Google não
 reivindicado, sem agendamento online etc. Nada é enviado; a abordagem é sua.
 
-## Configurar
+## Sem nenhuma chave (grátis)
+
+**OpenStreetMap** funciona sem cadastro. Ele entende ramos em português
+(padaria, salão, barbearia, oficina, clínica, dentista, academia, pet shop,
+farmácia, advogado, contador, imobiliária e outros) e já traz o telefone quando
+alguém cadastrou no mapa.
+
+```bash
+harvey signals --confirm free
+harvey discover --provider osm --city "Ribeirão Preto, SP"
+harvey leads
+```
+
+Limites: o OSM só tem o que voluntários mapearam, então a cobertura varia muito
+de cidade para cidade e muitos registros vêm sem telefone. "Sem site" no OSM
+quer dizer que o mapa não conhece o site, não que a empresa não tenha um.
+Confira antes de abordar.
+
+**Serper Maps** é o próximo passo, ainda grátis: cadastro em serper.dev só com
+e-mail, sem cartão, e 2.500 buscas grátis. Ele traz dados do Google Maps
+(telefone, site, nota), bem mais completos que o OSM. Cada página de ~20
+empresas gasta uma busca.
+
+```bash
+# .env: SERPER_API_KEY=sua_chave
+harvey discover --provider serper_places --city "Ribeirão Preto, SP"
+```
+
+## Google Places (pago, com cota grátis)
+
 
 1. No Google Cloud Console, crie um projeto, ative **Places API (New)** e o
    faturamento, e gere uma chave de API.

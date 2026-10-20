@@ -24,6 +24,7 @@ import asyncio
 import base64
 import logging
 import re
+import unicodedata
 from dataclasses import dataclass, field
 from urllib.parse import urlparse
 
@@ -70,6 +71,12 @@ JUNK_NAME_PATTERNS = tuple(re.compile(p, re.I) for p in (
     r"^\s*(top|best|\d+)\s+\d*\s*(best\s+)?\w+.*\b(in|near|of)\b",
     r"\b(directory|listings?|reviews? of|compare|find a)\b",
 ))
+
+
+def _fold(text: str) -> str:
+    """Lowercase without accents: "Salão" and "salao" are the same search."""
+    return "".join(ch for ch in unicodedata.normalize("NFKD", text.lower())
+                   if not unicodedata.combining(ch))
 
 
 def normalize_domain(url_or_domain: str) -> str:
@@ -496,6 +503,53 @@ class OpenStreetMap(DiscoveryProvider):
         "attorney": ['office=lawyer'],
         "contractor": ['craft=builder', 'office=construction_company'],
         "landscap": ['craft=gardener', 'shop=garden_centre'],
+        # Brazilian Portuguese trades (matched without accents).
+        "padaria": ['shop=bakery'],
+        "confeitaria": ['shop=pastry', 'shop=confectionery'],
+        "restaurante": ['amenity=restaurant'],
+        "lanchonete": ['amenity=fast_food'],
+        "pizzaria": ['amenity=restaurant', 'amenity=fast_food'],
+        "cafeteria": ['amenity=cafe'],
+        "acougue": ['shop=butcher'],
+        "mercado": ['shop=supermarket', 'shop=convenience'],
+        "oficina": ['shop=car_repair'],
+        "mecanic": ['shop=car_repair'],
+        "auto pecas": ['shop=car_parts'],
+        "salao": ['shop=hairdresser', 'shop=beauty'],
+        "cabeleireir": ['shop=hairdresser'],
+        "barbearia": ['shop=hairdresser'],
+        "bar": ['amenity=bar', 'amenity=pub'],
+        "estetica": ['shop=beauty'],
+        "manicure": ['shop=beauty'],
+        "academia": ['leisure=fitness_centre'],
+        "dentista": ['amenity=dentist'],
+        "odontolog": ['amenity=dentist'],
+        "veterinari": ['amenity=veterinary'],
+        "clinica": ['amenity=clinic', 'amenity=doctors'],
+        "medic": ['amenity=doctors'],
+        "pet shop": ['shop=pet'],
+        "farmacia": ['amenity=pharmacy'],
+        "otica": ['shop=optician'],
+        "advogad": ['office=lawyer'],
+        "advocacia": ['office=lawyer'],
+        "contabil": ['office=accountant'],
+        "contador": ['office=accountant'],
+        "imobiliaria": ['office=estate_agent'],
+        "floricultura": ['shop=florist'],
+        "roupa": ['shop=clothes'],
+        "boutique": ['shop=boutique', 'shop=clothes'],
+        "calcado": ['shop=shoes'],
+        "material de construcao": ['shop=hardware', 'shop=doityourself'],
+        "ferragem": ['shop=hardware'],
+        "moveis": ['shop=furniture'],
+        "eletricista": ['craft=electrician'],
+        "encanador": ['craft=plumber'],
+        "papelaria": ['shop=stationery'],
+        "lavanderia": ['shop=laundry', 'shop=dry_cleaning'],
+        "hotel": ['tourism=hotel'],
+        "pousada": ['tourism=guest_house'],
+        "autoescola": ['amenity=driving_school'],
+        "escola": ['amenity=school', 'amenity=language_school'],
     }
 
     def _tags(self, term: str) -> list[str]:
@@ -508,7 +562,7 @@ class OpenStreetMap(DiscoveryProvider):
         database with plausible-looking junk is far worse than returning
         nothing.
         """
-        low = term.lower()
+        low = _fold(term)
         for needle, tags in self.TAG_MAP.items():
             if needle in low:
                 return tags
@@ -684,10 +738,85 @@ class GooglePlaces(DiscoveryProvider):
         )
 
 
+class SerperPlaces(DiscoveryProvider):
+    """Google Maps results through Serper — phone, website, rating, address.
+
+    Same account and key as the Serper SERP provider, so the 2,500 free
+    queries (no card) cover it. Each page holds about 20 places.
+    """
+
+    key = "serper_places"
+    label = "Serper Maps (Google Maps)"
+    kind = "listings"
+    blurb = ("Google Maps listings with phone and website via Serper. Free to "
+             "start: 2,500 queries on signup, no credit card.")
+    cost_note = "1 query per page of ~20 places (~$0.30-$1.00 per 1,000 after the free tier)"
+    free_tier = "2,500 queries free, no card required"
+    signup_url = "https://serper.dev"
+    env_keys = ("serper_api_key",)
+    caveat = "Shares the SERPER_API_KEY and its credits with the Serper provider."
+
+    URL = "https://google.serper.dev/places"
+    PAGE_SIZE = 20
+    MAX_PAGES = 3
+    COST_PER_REQUEST = 0.001
+
+    def estimate(self, queries):
+        pages = lambda q: min(self.MAX_PAGES, max(1, -(-q.limit // self.PAGE_SIZE)))
+        return sum(self.COST_PER_REQUEST * pages(q) for q in queries)
+
+    async def fetch(self, client, env, query):
+        out: list[Business] = []
+        for page in range(1, self.MAX_PAGES + 1):
+            r = await client.post(
+                self.URL,
+                headers={"X-API-KEY": env["serper_api_key"],
+                         "Content-Type": "application/json"},
+                json={"q": query.keyword(), "gl": "br", "hl": "pt-br",
+                      "page": page},
+            )
+            r.raise_for_status()
+            self.last_cost += self.COST_PER_REQUEST
+            places = r.json().get("places") or []
+            for place in places:
+                biz = self._parse(place, query)
+                if biz:
+                    out.append(biz)
+            if len(places) < self.PAGE_SIZE or len(out) >= query.limit:
+                break
+        return out[:query.limit]
+
+    def _parse(self, place: dict, query) -> "Business | None":
+        name = place.get("title") or ""
+        if not name:
+            return None
+        site = place.get("website") or ""
+        domain = normalize_domain(site)
+        if any(domain == s or domain.endswith("." + s) for s in GooglePlaces.SOCIAL):
+            domain = ""        # a social page is not a website
+        cid = place.get("cid") or place.get("placeId") or ""
+        return Business(
+            name=name,
+            domain=domain,
+            website=site if domain else "",
+            phone=place.get("phoneNumber") or "",
+            address=place.get("address") or "",
+            location=place.get("address") or query.location,
+            category=place.get("category") or "",
+            rating=place.get("rating"),
+            review_count=place.get("ratingCount"),
+            has_website=bool(domain),
+            external_id=f"serper_places:{cid}" if cid else "",
+            source_url=f"https://maps.google.com/?cid={cid}" if place.get("cid") else "",
+            provider=self.key,
+        )
+
+
 PROVIDERS: dict[str, DiscoveryProvider] = {
     p.key: p for p in (
         OpenStreetMap(),
         GooglePlaces(),
+        SerperPlaces(),
         DataForSEOListings(),
         DataForSEOSerp(),
         Serper(),
