@@ -160,6 +160,16 @@ SIGNAL_CATALOG: list[dict] = [
         "confidence_floor": 0.0,
     },
     {
+        "code": "WHATSAPP_ONLY_BOOKING",
+        "label": "Books only through WhatsApp",
+        "description": "The site links to WhatsApp but has no booking tool — the schedule lives in a chat, so every appointment costs someone's time.",
+        "category": "profile",
+        "value_type": "bool",
+        "collector": "profile",
+        "cost_note": "free (homepage HTML)",
+        "confidence_floor": 0.0,
+    },
+    {
         "code": "NO_ONLINE_BOOKING",
         "label": "No online booking/scheduling",
         "description": "No booking or scheduling widget detected — leads have to phone in, so after-hours demand is lost.",

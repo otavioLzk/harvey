@@ -209,11 +209,96 @@ async def test_html_page_escapes_and_has_buttons(state):
     rows = [{"company_name": "Bar <b>do</b> João", "industry": "bar",
              "phone": "(16) 99123-4567", "address": "Centro", "maps_url": "",
              "signals": "NO_WEBSITE", "whatsapp_message": "Oi!",
-             "whatsapp_link": "https://wa.me/5516991234567?text=Oi%21"},
+             "whatsapp_link": "https://wa.me/5516991234567?text=Oi%21",
+             "phone_type": "mobile", "score": 60, "rating": 4.8, "review_count": 30},
             {"company_name": "Fixo", "industry": "", "phone": "(16) 3322-1100",
              "address": "", "maps_url": "", "signals": "",
-             "whatsapp_message": "Oi!", "whatsapp_link": ""}]
+             "whatsapp_message": "Oi!", "whatsapp_link": "",
+             "phone_type": "landline", "score": 0, "rating": "", "review_count": ""}]
     page = to_html(rows)
     assert "Bar &lt;b&gt;do&lt;/b&gt; João" in page
     assert page.count("Abrir no WhatsApp") == 1
     assert "sem site" in page and "Leads (2)" in page
+    assert "<th>Nicho</th>" in page
+
+
+# ── booking detection for Brazilian sites ──
+
+def _collector(html):
+    from harvey.collectors.profile import ProfileCollector
+    c = ProfileCollector.__new__(ProfileCollector)
+    c.confirmed = {"NO_ONLINE_BOOKING", "WHATSAPP_ONLY_BOOKING"}
+
+    async def fake_get(url):
+        return html if url.rstrip("/").endswith("salao.com.br") else ""
+    c._get = fake_get
+    return c
+
+
+async def _booking(html):
+    c = _collector(html)
+    obs = await c.profile_company("c1", "salao.com.br")
+    return {o["signal_code"]: o["value_num"] for o in obs}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("html", [
+    '<a href="https://www.trinks.com/salao-x">Agende</a>',
+    '<a href="https://booksy.com/pt-br/123">Reservar</a>',
+    '<a href="https://www.doctoralia.com.br/dra-x">Consulta</a>',
+    '<a href="/agenda">Agende já o seu horário</a>',
+    '<button>Agendamento online</button>',
+])
+async def test_brazilian_booking_tools_count_as_booking(html):
+    got = await _booking(f"<html><body>{html}"
+                         '<a href="https://wa.me/5535999990000">WhatsApp</a></body></html>')
+    assert got == {"NO_ONLINE_BOOKING": 0, "WHATSAPP_ONLY_BOOKING": 0}
+
+
+@pytest.mark.asyncio
+async def test_whatsapp_link_without_booking_tool_is_whatsapp_only():
+    got = await _booking('<html><a href="https://wa.me/5535999990000">'
+                         'Agende pelo WhatsApp</a></html>')
+    assert got == {"NO_ONLINE_BOOKING": 1, "WHATSAPP_ONLY_BOOKING": 1}
+    got = await _booking("<html><p>Ligue para nós</p></html>")
+    assert got == {"NO_ONLINE_BOOKING": 1, "WHATSAPP_ONLY_BOOKING": 0}
+
+
+# ── score, false signals, niches ──
+
+@pytest.mark.asyncio
+async def test_signals_recorded_as_false_are_not_pitched_and_score_orders(state):
+    from harvey.leads import niche_report
+    from harvey.models.company import Company
+
+    async def company(name, phone, domain="", industry="barbearia", **signals):
+        cid = await state.add_company(Company(
+            name=name, phone=phone, domain=domain,
+            website=f"https://{domain}" if domain else "", industry=industry))
+        await state.add_observations([
+            {"company_id": cid, "signal_code": code, "collector": "test",
+             "value_num": value} for code, value in signals.items()])
+        return cid
+
+    await company("Com agenda", "(35) 99111-1111", "a.com.br",
+                  NO_ONLINE_BOOKING=0, WHATSAPP_ONLY_BOOKING=0,
+                  REVIEW_RATING=4.9, REVIEW_COUNT=80)
+    await company("Agenda no zap", "(35) 99222-2222", "b.com.br",
+                  NO_ONLINE_BOOKING=1, WHATSAPP_ONLY_BOOKING=1,
+                  REVIEW_RATING=4.8, REVIEW_COUNT=60, BLOG_STALE=30)
+    await company("Sem site", "(35) 99333-3333", industry="dentista",
+                  NO_WEBSITE=1, REVIEW_RATING=4.6, REVIEW_COUNT=25)
+
+    rows = await collect_leads(state)
+    by = {r["company_name"]: r for r in rows}
+    assert by["Com agenda"]["signals"] == ""
+    assert by["Agenda no zap"]["signals"] == "WHATSAPP_ONLY_BOOKING;NO_ONLINE_BOOKING"
+    assert "marcados pelo WhatsApp" in by["Agenda no zap"]["whatsapp_message"]
+    assert [r["company_name"] for r in rows][-1] == "Com agenda"
+    assert by["Sem site"]["score"] == 40 + 12 + 10 + 10
+    assert by["Agenda no zap"]["score"] == 30 + 20 + 10 + 10
+
+    niches = {n["niche"]: n for n in niche_report(rows)}
+    assert niches["barbearia"]["total"] == 2
+    assert niches["barbearia"]["no_booking"] == 1
+    assert niches["dentista"]["no_website"] == 1

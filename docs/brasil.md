@@ -82,3 +82,23 @@ harvey leads --nome "Seu Nome" --empresa "Sua Empresa"
 As mensagens não usam IA: são montadas por regras, então não custam nada e a
 mesma empresa sempre recebe o mesmo texto. Para mudar o tom, edite
 `harvey/br_messages.py`.
+
+## Nota de potencial e relatório por nicho
+
+Cada lead recebe uma nota de 0 a 100 (coluna `score`), e a lista vem ordenada
+por ela. Somam pontos: não ter site, agendar só pelo WhatsApp, não ter
+agendamento online, perfil do Google não reivindicado, site parado; e também ter
+muitas avaliações boas (sinal de que o negócio tem clientes) e celular. Já ter
+uma agência tira pontos.
+
+O detector de agendamento reconhece as ferramentas usadas no Brasil (Trinks,
+Booksy, Avec, Doctoralia, Simples Agenda, AppBarber, Feegow, iClinic e outras) e
+frases como "agende já" ou "agendamento online". Um site com link de WhatsApp e
+sem nenhuma dessas ferramentas ganha o sinal "agenda só pelo WhatsApp". Para
+isso, rode o perfil dos sites (`harvey discover` já faz, a menos que você use
+`--no-profile`).
+
+`harvey leads` mostra no terminal, e no topo do `leads.html`, uma tabela por
+nicho: quantos negócios, quantos com celular, sem site, sem agendamento, bem
+avaliados (nota 4,5+ com 20+ avaliações) e o potencial médio. Use isso para
+escolher por onde começar na sua cidade.

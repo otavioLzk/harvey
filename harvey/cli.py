@@ -374,7 +374,7 @@ def cmd_leads(args):
     """Export discovered businesses as a phone-first lead list (WhatsApp/visit)."""
     from harvey.state import StateManager
     from harvey.config import load_config
-    from harvey.leads import export_leads_csv
+    from harvey.leads import export_leads_csv, niche_report
 
     async def _leads():
         state = StateManager()
@@ -384,11 +384,12 @@ def cmd_leads(args):
             "" if persona.name == "Harvey" else persona.name)
         company = args.empresa if args.empresa is not None else (
             "" if persona.company == "Your Company" else persona.company)
-        count = await export_leads_csv(
+        rows = await export_leads_csv(
             state, args.out, whatsapp_only=args.whatsapp,
             no_website_only=args.no_website, sender=sender, company=company,
             html_path=args.html,
         )
+        count = len(rows)
         print(f"\n  Exported {count} lead(s) to {args.out}"
               + (f" and {args.html}" if args.html else ""))
         if not sender:
@@ -397,7 +398,14 @@ def cmd_leads(args):
             print("  Nothing yet? Run: harvey discover --provider google_places "
                   '--city "Sua Cidade, UF"\n')
         else:
-            print("  Sorted: no website first, then WhatsApp-reachable numbers.\n")
+            print("  Sorted by potential score (0-100).\n")
+            print(f"  {'Nicho':<28}{'Total':>6}{'Celular':>9}{'Sem site':>10}"
+                  f"{'Sem agenda':>12}{'Bem avaliados':>15}{'Potencial':>11}")
+            for n in niche_report(rows):
+                print(f"  {n['niche'][:27]:<28}{n['total']:>6}{n['mobile']:>9}"
+                      f"{n['no_website']:>10}{n['no_booking']:>12}"
+                      f"{n['well_reviewed']:>15}{n['avg_score']:>11}")
+            print()
 
     asyncio.run(_leads())
 

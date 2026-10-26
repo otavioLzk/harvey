@@ -20,6 +20,8 @@ GREETINGS = ("Oi, {name}! Tudo bem?", "Olá, {name}! Tudo bem?",
 OBSERVATIONS = {
     "NO_WEBSITE": "Vi o perfil de vocês no Google Maps e reparei que ainda não "
                   "têm um site.",
+    "WHATSAPP_ONLY_BOOKING": "Dei uma olhada no site de vocês e vi que os horários "
+                             "são marcados pelo WhatsApp.",
     "UNCLAIMED_LISTING": "Vi o perfil de vocês no Google Maps e reparei que ele "
                          "ainda não foi reivindicado no Google.",
     "NO_ONLINE_BOOKING": "Dei uma olhada no site de vocês e vi que ainda não dá "
@@ -36,6 +38,9 @@ OFFERS = {
     "NO_WEBSITE": "Eu faço sites para negócios aqui da região, e um site simples "
                   "costuma trazer clientes que hoje procuram no Google e não "
                   "acham vocês.",
+    "WHATSAPP_ONLY_BOOKING": "Eu monto agendamento online com lembrete automático: "
+                             "o cliente escolhe o horário sozinho e vocês param de "
+                             "perder tempo respondendo mensagem para marcar.",
     "UNCLAIMED_LISTING": "Eu ajudo negócios daqui a cuidar disso e a montar um "
                          "site, para aparecerem melhor quando alguém procura.",
     "NO_ONLINE_BOOKING": "Eu monto sites com agendamento online, assim o cliente "
