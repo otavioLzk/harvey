@@ -20,7 +20,7 @@ from harvey.state import StateManager
 CSV_COLUMNS = [
     "company_name", "industry", "phone", "phone_e164", "phone_type",
     "score", "whatsapp_link", "whatsapp_message", "has_website", "website", "address", "rating",
-    "review_count", "signals", "maps_url", "source",
+    "review_count", "signals", "maps_url", "source", "contacted_at",
 ]
 
 # Signals worth naming to a business owner, in the order a salesperson would
@@ -30,6 +30,12 @@ PITCH_ORDER = ("NO_WEBSITE", "WHATSAPP_ONLY_BOOKING", "UNCLAIMED_LISTING",
                "RUNNING_GOOGLE_ADS", "RUNNING_META_ADS", "INCUMBENT_AGENCY")
 
 STALE_DAYS = 180
+
+# settings key marking a lead the person has already messaged (value: ISO date).
+CONTACTED_PREFIX = "lead_contacted:"
+# settings keys holding the name and business that sign each message.
+SENDER_NAME_KEY = "lead_sender_name"
+SENDER_COMPANY_KEY = "lead_sender_company"
 
 # Points toward "worth a message today". Gaps we can sell into, plus proof the
 # business already has demand (reviews) and can be reached (a mobile number).
@@ -83,6 +89,12 @@ async def collect_leads(state: StateManager, whatsapp_only: bool = False,
                ORDER BY observed_at"""
         ) as cur:
             obs = [dict(r) for r in await cur.fetchall()]
+        async with db.execute(
+            "SELECT key, value FROM settings WHERE key LIKE ?",
+            (CONTACTED_PREFIX + "%",),
+        ) as cur:
+            contacted = {r["key"][len(CONTACTED_PREFIX):]: r["value"]
+                         for r in await cur.fetchall() if r["value"]}
 
     by_company: dict[str, dict[str, dict]] = {}
     for o in obs:
@@ -106,6 +118,8 @@ async def collect_leads(state: StateManager, whatsapp_only: bool = False,
             pitch.insert(0, "NO_WEBSITE")
         phones.append(phone)
         out.append({
+            "id": c["id"],
+            "contacted_at": contacted.get(c["id"], ""),
             "company_name": c.get("name", ""),
             "industry": c.get("industry", ""),
             "phone": c.get("phone", ""),

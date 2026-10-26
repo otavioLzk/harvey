@@ -163,6 +163,7 @@ function showTab(id, btn) {
 function loadCurrentTab() {
   switch (currentTab) {
     case 'today': loadToday(); loadSetupStatus(); loadRuns(); loadTodayActivity(); break;
+    case 'leads': loadLeads(); break;
     case 'signals': loadSignals(); break;
     case 'discover': loadDiscoverProviders(); break;
     case 'companies': if (!companyDrill) loadCompanies(); break;
@@ -1376,3 +1377,194 @@ setInterval(() => {
     case 'controls': loadLogs(); break;
   }
 }, 15000);
+
+
+// ── Leads: worked by hand over WhatsApp ──
+
+let _leads = [];
+let _leadPoll = null;
+
+const LEAD_SIGNAL_LABELS = {
+  NO_WEBSITE: 'sem site', WHATSAPP_ONLY_BOOKING: 'agenda só pelo WhatsApp',
+  UNCLAIMED_LISTING: 'perfil do Google não reivindicado',
+  NO_ONLINE_BOOKING: 'sem agendamento online', NO_SCHEMA_MARKUP: 'SEO básico faltando',
+  BLOG_STALE: 'site desatualizado', RUNNING_GOOGLE_ADS: 'anuncia no Google',
+  RUNNING_META_ADS: 'anuncia no Instagram/Facebook', INCUMBENT_AGENCY: 'já tem agência',
+};
+// Sources that make sense for local businesses, best first.
+const LEAD_PROVIDERS = ['serper_places', 'google_places', 'osm', 'dataforseo_listings'];
+
+async function loadLeads() {
+  const [data, prov] = await Promise.all([api('/api/leads'), api('/api/discover/providers')]);
+  if (!data) { document.getElementById('lead-list').innerHTML = offlineState(); return; }
+  _leads = data.leads || [];
+
+  const name = document.getElementById('lead-name');
+  const company = document.getElementById('lead-company');
+  if (document.activeElement !== name && !name.value) name.value = (data.sender || {}).name || '';
+  if (document.activeElement !== company && !company.value) company.value = (data.sender || {}).company || '';
+
+  if (prov && prov.providers) renderLeadProviders(prov);
+  renderLeadNiches(data.niches || []);
+  renderLeads();
+}
+
+function renderLeadProviders(prov) {
+  const sel = document.getElementById('lead-provider');
+  const keep = sel.value;
+  const byKey = Object.fromEntries(prov.providers.map(p => [p.key, p]));
+  const opts = LEAD_PROVIDERS.filter(k => byKey[k]).map(k => byKey[k]);
+  sel.innerHTML = opts.map(p =>
+    '<option value="' + p.key + '">' + escHtml(p.label) +
+    (p.configured ? '' : ' (precisa de chave)') + '</option>').join('');
+  const firstReady = opts.find(p => p.configured);
+  sel.value = keep || (firstReady ? firstReady.key : 'osm');
+  sel.onchange = () => leadProviderHint(byKey);
+  leadProviderHint(byKey);
+
+  const running = prov.running;
+  const btn = document.getElementById('lead-search');
+  const status = document.getElementById('lead-search-status');
+  btn.disabled = running;
+  btn.textContent = running ? 'Buscando…' : 'Buscar';
+  if (running) {
+    status.textContent = 'Buscando empresas e lendo os sites. A lista atualiza sozinha.';
+    if (!_leadPoll) _leadPoll = setInterval(() => { if (currentTab === 'leads') loadLeads(); }, 5000);
+  } else if (_leadPoll) {
+    clearInterval(_leadPoll);
+    _leadPoll = null;
+    const r = prov.last_report || {};
+    const errs = (r.errors || []).length ? ' Avisos: ' + r.errors.slice(0, 2).join(' · ') : '';
+    status.textContent = 'Busca concluída: ' + (r.new_companies || 0) + ' empresas novas.' + errs;
+  }
+}
+
+function leadProviderHint(byKey) {
+  const p = byKey[document.getElementById('lead-provider').value];
+  const el = document.getElementById('lead-provider-hint');
+  if (!p) { el.innerHTML = ''; return; }
+  el.innerHTML = escHtml(p.free_tier) + (p.configured ? '' :
+    ' · Precisa de ' + escHtml(p.env_keys.join(', ')) + ' (aba Settings ou arquivo .env) · ' +
+    '<a href="' + escHtml(p.signup_url) + '" target="_blank" rel="noopener">criar chave</a>');
+}
+
+async function searchLeads() {
+  const city = document.getElementById('lead-city').value.trim();
+  const terms = document.getElementById('lead-terms').value.split(',').map(t => t.trim()).filter(Boolean);
+  const provider = document.getElementById('lead-provider').value;
+  if (!city || !terms.length) { showToast('Preencha a cidade e pelo menos um tipo de negócio.', 'error'); return; }
+  const body = {provider, cities: [city], terms, limit: 60, max_spend: 1};
+
+  // Nothing is collected until signals are confirmed; this tab turns on the
+  // free ones, and says so, rather than failing silently.
+  const sig = await api('/api/signals');
+  if (sig && sig.summary && !sig.summary.confirmed) {
+    if (!confirm('Para marcar "sem site", "sem agendamento" etc., o Harvey precisa ' +
+                 'ativar os sinais gratuitos. Ativar agora?')) return;
+    const free = [];
+    (sig.groups || []).forEach(g => g.signals.forEach(s => {
+      if ((s.cost_note || '').toLowerCase().startsWith('free')) free.push(s.code);
+    }));
+    await api('/api/signals/status', {method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({codes: free, status: 'confirmed'})});
+  }
+
+  const est = await api('/api/discover/estimate', {method: 'POST',
+    headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)});
+  if (!est || est.error) { showToast((est && est.error) || 'Não consegui estimar a busca.', 'error'); return; }
+  if (!est.free && !confirm(est.query_count + ' buscas, custo estimado de até US$ ' +
+                            est.estimated_cost.toFixed(2) + '. Continuar?')) return;
+
+  const run = await api('/api/discover/run', {method: 'POST',
+    headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)});
+  if (run && run.success) showToast('Busca iniciada: ' + run.queries + ' pesquisas.', 'success');
+  else showToast((run && run.message) || 'Não consegui iniciar a busca.', 'error');
+  loadLeads();
+}
+
+async function saveLeadSender() {
+  const r = await api('/api/leads/sender', {method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({name: document.getElementById('lead-name').value,
+                          company: document.getElementById('lead-company').value})});
+  showToast(r ? 'Salvo. As mensagens foram atualizadas.' : 'Não consegui salvar.', r ? 'success' : 'error');
+  loadLeads();
+}
+
+function renderLeadNiches(niches) {
+  const el = document.getElementById('lead-niches');
+  if (!niches.length) { el.innerHTML = ''; return; }
+  el.innerHTML = '<div class="subhead">Por tipo de negócio</div><div class="table-card"><table><thead><tr>' +
+    '<th>Tipo</th><th>Total</th><th>Celular</th><th>Sem site</th><th>Sem agendamento</th>' +
+    '<th title="nota 4,5+ com 20+ avaliações">Bem avaliados</th><th>Potencial médio</th></tr></thead><tbody>' +
+    niches.map(n => '<tr><td>' + escHtml(n.niche) + '</td><td>' + n.total + '</td><td>' + n.mobile +
+      '</td><td>' + n.no_website + '</td><td>' + n.no_booking + '</td><td>' + n.well_reviewed +
+      '</td><td>' + n.avg_score + '</td></tr>').join('') +
+    '</tbody></table></div>';
+}
+
+function renderLeads() {
+  const showDone = document.getElementById('lead-show-done').checked;
+  const mobileOnly = document.getElementById('lead-mobile-only').checked;
+  const pending = _leads.filter(l => !l.contacted_at);
+  navCount('nav-leads', pending.length);
+  const list = _leads.filter(l => (showDone || !l.contacted_at) && (!mobileOnly || l.phone_type === 'mobile'));
+  document.getElementById('lead-count').textContent =
+    pending.length + ' na fila · ' + (_leads.length - pending.length) + ' já contatados';
+
+  const el = document.getElementById('lead-list');
+  if (!_leads.length) {
+    el.innerHTML = emptyState('◎', 'Nenhuma empresa ainda',
+      'Preencha a cidade e os tipos de negócio acima e clique em Buscar.');
+    return;
+  }
+  if (!list.length) { el.innerHTML = emptyState('✓', 'Fila vazia', 'Todos os leads deste filtro já foram contatados.'); return; }
+
+  el.innerHTML = '<div class="lead-grid">' + list.map(l => {
+    const i = _leads.indexOf(l);
+    let codes = (l.signals || '').split(';').filter(Boolean);
+    if (codes.includes('WHATSAPP_ONLY_BOOKING')) codes = codes.filter(c => c !== 'NO_ONLINE_BOOKING');
+    const tags = codes.map(c => '<span class="badge t-note">' + escHtml(LEAD_SIGNAL_LABELS[c] || c) + '</span>').join(' ');
+    const rating = l.rating !== '' && l.rating != null
+      ? ' · ★ ' + String(l.rating).replace('.', ',') + (l.review_count !== '' ? ' (' + l.review_count + ')' : '') : '';
+    const wa = l.phone_e164 && l.phone_type === 'mobile'
+      ? '<button class="btn btn-primary btn-sm lead-wa" onclick="openLeadWhatsApp(' + i + ')">Abrir no WhatsApp</button>'
+      : '<span class="muted lead-hint">' + (l.phone ? 'Telefone fixo: ligue ou visite' : 'Sem telefone') + '</span>';
+    const done = l.contacted_at
+      ? '<button class="btn btn-secondary btn-sm" onclick="markLead(' + i + ', false)">Desfazer (' + escHtml(l.contacted_at) + ')</button>'
+      : '<button class="btn btn-secondary btn-sm" onclick="markLead(' + i + ', true)">Já contatei</button>';
+    return '<article class="lead-card' + (l.contacted_at ? ' done' : '') + '">' +
+      '<div class="lead-head"><h3>' + escHtml(l.company_name) + '</h3>' +
+        '<span class="lead-score" title="Potencial de 0 a 100">' + l.score + '</span></div>' +
+      '<div class="muted lead-hint">' + escHtml(l.industry || '') + ' · ' + escHtml(l.phone || 'sem telefone') + rating +
+        (l.maps_url ? ' · <a href="' + escHtml(l.maps_url) + '" target="_blank" rel="noopener">mapa</a>' : '') +
+        (l.website ? ' · <a href="' + escHtml(l.website) + '" target="_blank" rel="noopener">site</a>' : '') + '</div>' +
+      (l.address ? '<div class="muted lead-hint">' + escHtml(l.address) + '</div>' : '') +
+      (tags ? '<div class="lead-tags">' + tags + '</div>' : '') +
+      '<textarea class="form-input lead-msg" id="lead-msg-' + i + '" rows="9">' + escHtml(l.whatsapp_message) + '</textarea>' +
+      '<div class="btn-group" style="margin-top:8px">' + wa +
+        '<button class="btn btn-secondary btn-sm" onclick="copyLead(' + i + ')">Copiar texto</button>' + done + '</div>' +
+    '</article>';
+  }).join('') + '</div>';
+}
+
+function openLeadWhatsApp(i) {
+  const l = _leads[i];
+  const text = document.getElementById('lead-msg-' + i).value;
+  window.open('https://wa.me/' + l.phone_e164.replace('+', '') + '?text=' + encodeURIComponent(text),
+              '_blank', 'noopener');
+}
+
+async function copyLead(i) {
+  const text = document.getElementById('lead-msg-' + i).value;
+  try { await navigator.clipboard.writeText(text); showToast('Texto copiado.', 'success'); }
+  catch { showToast('Não consegui copiar. Selecione e copie a mão.', 'error'); }
+}
+
+async function markLead(i, contacted) {
+  const l = _leads[i];
+  const r = await api('/api/leads/' + encodeURIComponent(l.id) + '/contacted', {method: 'POST',
+    headers: {'Content-Type': 'application/json'}, body: JSON.stringify({contacted})});
+  if (!r) { showToast('Não consegui salvar.', 'error'); return; }
+  l.contacted_at = r.contacted_at;
+  renderLeads();
+}

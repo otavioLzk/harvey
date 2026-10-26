@@ -885,7 +885,8 @@ class DiscoveryReport:
 
 
 def build_queries(config, cities: list[str] | None = None,
-                  depth: int = 30, limit: int = 100) -> list[DiscoveryQuery]:
+                  depth: int = 30, limit: int = 100,
+                  terms: list[str] | None = None) -> list[DiscoveryQuery]:
     """Turn the configured ICP into a concrete query list.
 
     One query per (industry x city). Coordinates come from
@@ -893,7 +894,7 @@ def build_queries(config, cities: list[str] | None = None,
     radius, not a place name.
     """
     icp = config.icp
-    terms = list(icp.industries) or [config.product.name]
+    terms = terms or list(icp.industries) or [config.product.name]
     places = cities if cities is not None else list(icp.geography) or [""]
     coords = getattr(icp, "geo_coordinates", {}) or {}
 
