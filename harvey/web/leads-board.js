@@ -149,11 +149,10 @@
         if (!all.has(k)) all.set(k, []);
         all.get(k).push(l);
       });
-      // Biggest opportunity first: average potential times size.
-      const order = [...groups.keys()].sort((a, b) => {
-        const w = k => { const xs = all.get(k); return xs.reduce((s, l) => s + (l.score || 0), 0); };
-        return w(b) - w(a) || a.localeCompare(b);
-      });
+      // Highest average potential first; a bigger niche wins a tie.
+      const avgOf = k => { const xs = all.get(k); return Math.round(xs.reduce((s, l) => s + (l.score || 0), 0) / xs.length); };
+      const order = [...groups.keys()].sort((a, b) =>
+        avgOf(b) - avgOf(a) || all.get(b).length - all.get(a).length || a.localeCompare(b));
       // Typing a name opens the niches it matches; nothing else opens one.
       const searching = Boolean(state.query);
 
