@@ -1350,19 +1350,23 @@ async def set_lead_sender(request: Request):
     return {"success": True}
 
 
-@app.post("/api/leads/{company_id}/contacted")
-async def set_lead_contacted(company_id: str, request: Request):
-    """Mark (or unmark) a lead as already messaged, so it leaves the queue."""
+@app.post("/api/leads/{company_id}/status")
+async def set_lead_status(company_id: str, request: Request):
+    """Where a lead stands: not contacted, messaged, negotiating, won, lost."""
     from datetime import date
 
-    from harvey.leads import CONTACTED_PREFIX
+    from harvey.leads import STATUS_PREFIX, STATUSES
 
     body = await request.json()
+    status = (body.get("status") or "").strip()
+    if status not in STATUSES:
+        return JSONResponse({"success": False, "message": f"invalid status: {status!r}"},
+                            status_code=400)
     state = _state()
     await state.init_db()
-    value = date.today().isoformat() if body.get("contacted", True) else ""
-    await state.set_setting(CONTACTED_PREFIX + company_id, value)
-    return {"success": True, "contacted_at": value}
+    today = date.today().isoformat()
+    await state.set_setting(STATUS_PREFIX + company_id, f"{status}|{today}")
+    return {"success": True, "status": status, "status_at": today}
 
 
 @app.get("/api/export/leads.csv")

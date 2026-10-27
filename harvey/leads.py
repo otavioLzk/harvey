@@ -9,7 +9,9 @@ signals that give a concrete reason to call.
 
 import csv
 import io
+import json
 from html import escape
+from pathlib import Path
 
 import aiosqlite
 
@@ -20,7 +22,7 @@ from harvey.state import StateManager
 CSV_COLUMNS = [
     "company_name", "industry", "phone", "phone_e164", "phone_type",
     "score", "whatsapp_link", "whatsapp_message", "has_website", "website", "address", "rating",
-    "review_count", "signals", "maps_url", "source", "contacted_at",
+    "review_count", "signals", "maps_url", "source", "status", "status_at",
 ]
 
 # Signals worth naming to a business owner, in the order a salesperson would
@@ -31,8 +33,16 @@ PITCH_ORDER = ("NO_WEBSITE", "WHATSAPP_ONLY_BOOKING", "UNCLAIMED_LISTING",
 
 STALE_DAYS = 180
 
-# settings key marking a lead the person has already messaged (value: ISO date).
-CONTACTED_PREFIX = "lead_contacted:"
+# Where each lead stands, as the person works the list.
+STATUSES = {
+    "novo": "Não contatado",
+    "enviado": "Mensagem enviada",
+    "negociando": "Em negociação",
+    "fechado": "Venda fechada",
+    "sem_interesse": "Sem interesse",
+}
+# settings key per lead: "<status>|<ISO date>".
+STATUS_PREFIX = "lead_status:"
 # settings keys holding the name and business that sign each message.
 SENDER_NAME_KEY = "lead_sender_name"
 SENDER_COMPANY_KEY = "lead_sender_company"
@@ -91,10 +101,10 @@ async def collect_leads(state: StateManager, whatsapp_only: bool = False,
             obs = [dict(r) for r in await cur.fetchall()]
         async with db.execute(
             "SELECT key, value FROM settings WHERE key LIKE ?",
-            (CONTACTED_PREFIX + "%",),
+            (STATUS_PREFIX + "%",),
         ) as cur:
-            contacted = {r["key"][len(CONTACTED_PREFIX):]: r["value"]
-                         for r in await cur.fetchall() if r["value"]}
+            statuses = {r["key"][len(STATUS_PREFIX):]: (r["value"] + "|").split("|")[:2]
+                        for r in await cur.fetchall() if r["value"]}
 
     by_company: dict[str, dict[str, dict]] = {}
     for o in obs:
@@ -119,7 +129,8 @@ async def collect_leads(state: StateManager, whatsapp_only: bool = False,
         phones.append(phone)
         out.append({
             "id": c["id"],
-            "contacted_at": contacted.get(c["id"], ""),
+            "status": statuses.get(c["id"], ["novo", ""])[0],
+            "status_at": statuses.get(c["id"], ["novo", ""])[1],
             "company_name": c.get("name", ""),
             "industry": c.get("industry", ""),
             "phone": c.get("phone", ""),
@@ -180,95 +191,84 @@ def to_csv(rows: list[dict]) -> str:
     return buf.getvalue()
 
 
-def to_html(rows: list[dict]) -> str:
-    """A page to work the list from: read the draft, tap, send, next."""
-    def card(r):
-        codes = [c for c in r["signals"].split(";") if c]
-        if "WHATSAPP_ONLY_BOOKING" in codes:      # already says there's no booking
-            codes = [c for c in codes if c != "NO_ONLINE_BOOKING"]
-        signals = ", ".join(SIGNAL_LABELS.get(c, c) for c in codes)
-        button = (f'<a class="wa" href="{escape(r["whatsapp_link"])}" target="_blank" '
-                  f'rel="noopener">Abrir no WhatsApp</a>' if r["whatsapp_link"]
-                  else f'<span class="muted">Telefone fixo: ligue ou visite</span>')
-        maps = (f' · <a href="{escape(r["maps_url"])}" target="_blank" rel="noopener">mapa</a>'
-                if r["maps_url"] else "")
-        return f"""<article>
-  <h2>{escape(r["company_name"])} <span class="score">{r["score"]}</span></h2>
-  <p class="muted">{escape(r["industry"])} · {escape(r["phone"] or "sem telefone")}{maps}</p>
-  <p class="muted">{escape(r["address"])}</p>
-  {f'<p class="tags">{escape(signals)}</p>' if signals else ""}
-  <textarea rows="10">{escape(r["whatsapp_message"])}</textarea>
-  <p>{button}</p>
-</article>"""
-    niches = niche_report(rows)
-    table = ""
-    if niches:
-        trs = "".join(
-            f"<tr><td>{escape(n['niche'])}</td><td>{n['total']}</td><td>{n['mobile']}</td>"
-            f"<td>{n['no_website']}</td><td>{n['no_booking']}</td>"
-            f"<td>{n['well_reviewed']}</td><td>{n['avg_score']}</td></tr>"
-            for n in niches)
-        table = ('<div class="wrap"><table><thead><tr><th>Nicho</th><th>Total</th>'
-                 '<th>Celular</th><th>Sem site</th><th>Sem agendamento</th>'
-                 '<th>Bem avaliados</th><th>Potencial</th></tr></thead>'
-                 f'<tbody>{trs}</tbody></table></div>')
-    body = "\n".join(card(r) for r in rows) or "<p>Nenhum lead ainda.</p>"
-    return (HTML_PAGE.replace("{count}", str(len(rows)))
-            .replace("{niches}", table).replace("{body}", body))
+def to_html(rows: list[dict], title: str = "Leads") -> str:
+    """A standalone page to work the list from, grouped by niche.
+
+    Statuses picked on the page are kept in that browser (localStorage); the
+    dashboard's Leads tab keeps them in the database instead. Both render with
+    the same board (harvey/web/leads-board.*).
+    """
+    data = json.dumps(rows, ensure_ascii=False, default=str).replace("</", "<\\/")
+    return (HTML_PAGE
+            .replace("{title}", escape(title))
+            .replace("{count}", str(len(rows)))
+            .replace("{board_css}", (WEB_DIR / "leads-board.css").read_text(encoding="utf-8"))
+            .replace("{board_js}", (WEB_DIR / "leads-board.js").read_text(encoding="utf-8"))
+            .replace("{data}", data))
 
 
-SIGNAL_LABELS = {
-    "NO_WEBSITE": "sem site", "UNCLAIMED_LISTING": "perfil do Google não reivindicado",
-    "NO_ONLINE_BOOKING": "sem agendamento online",
-    "WHATSAPP_ONLY_BOOKING": "agenda só pelo WhatsApp", "NO_SCHEMA_MARKUP": "SEO básico faltando",
-    "BLOG_STALE": "site desatualizado", "RUNNING_GOOGLE_ADS": "anuncia no Google",
-    "RUNNING_META_ADS": "anuncia no Instagram/Facebook", "INCUMBENT_AGENCY": "já tem agência",
-}
+WEB_DIR = Path(__file__).resolve().parent / "web"
 
 HTML_PAGE = """<!doctype html>
 <html lang="pt-BR"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Leads</title>
+<title>{title}</title>
 <style>
-:root { --bg:#f7f7f5; --card:#fff; --text:#1d1d1b; --muted:#6b6b66; --line:#e3e3de; --wa:#1f8f4e; }
+:root {
+  --bg:#FBFAF8; --panel:#FFFFFF; --panel-raised:#F5F3EF; --border:#E8E4DD; --border-strong:#D3CDC3;
+  --text:#1E1B17; --text-2:#5E584F; --text-3:#948D82; --r-md:6px;
+  --s-good:#2F7A45; --s-good-bg:#E6F1E9; --s-wait:#8A6A1F; --s-wait-bg:#FAF2DC;
+  --s-bad:#96322E; --s-bad-bg:#FBEBE9; --s-active:#2C5F7C; --s-active-bg:#E9F0F5;
+  --s-note:#5B4A72; --s-note-bg:#F1EDF6;
+  color-scheme: light;
+}
 @media (prefers-color-scheme: dark) {
-  :root { --bg:#161615; --card:#21211f; --text:#ededea; --muted:#a3a39d; --line:#34342f; --wa:#2fb067; }
+  :root {
+    --bg:#131210; --panel:#1A1917; --panel-raised:#221F1C; --border:#2B2825; --border-strong:#3D3934;
+    --text:#ECE8E1; --text-2:#B5AEA3; --text-3:#857E73;
+    --s-good:#7FC492; --s-good-bg:#1B2A20; --s-wait:#D9B45E; --s-wait-bg:#2B2416;
+    --s-bad:#E58A84; --s-bad-bg:#2E1A18; --s-active:#86B6D4; --s-active-bg:#172430;
+    --s-note:#B7A6D0; --s-note-bg:#231E2C;
+    color-scheme: dark;
+  }
 }
 body { margin:0; padding:16px; background:var(--bg); color:var(--text);
-       font:15px/1.45 system-ui, sans-serif; }
-main { max-width:720px; margin:0 auto; }
-article { background:var(--card); border:1px solid var(--line); border-radius:10px;
-          padding:14px 16px; margin:12px 0; }
-h1 { font-size:20px; } h2 { font-size:17px; margin:0 0 4px; }
-p { margin:4px 0; } .muted { color:var(--muted); font-size:13px; }
-.tags { font-size:13px; }
-textarea { width:100%; box-sizing:border-box; margin:8px 0; padding:8px; font:inherit;
-           background:var(--bg); color:var(--text); border:1px solid var(--line);
-           border-radius:6px; resize:vertical; }
-a { color:inherit; }
-.score { font-size:13px; font-weight:600; padding:1px 7px; border-radius:10px;
-         border:1px solid var(--line); color:var(--muted); vertical-align:middle; }
-.wrap { overflow-x:auto; }
-table { border-collapse:collapse; width:100%; font-size:13px; margin:12px 0; }
-th, td { text-align:left; padding:6px 8px; border-bottom:1px solid var(--line); }
-th { color:var(--muted); font-weight:600; }
-.wa { display:inline-block; background:var(--wa); color:#fff; text-decoration:none;
-      padding:8px 14px; border-radius:6px; font-weight:600; }
+       font:15px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+main { max-width:860px; margin:0 auto; }
+h1 { font-size:22px; margin:4px 0 4px; }
+.lede { color:var(--text-2); font-size:13px; margin:0 0 16px; }
+{board_css}
 </style></head>
 <body><main>
-<h1>Leads ({count})</h1>
-<p class="muted">Ordenado pela nota de potencial (0 a 100). "Bem avaliados" = nota 4,5+ com 20+ avaliações. Você pode editar o texto: o botão envia o que estiver na caixa.</p>
-{niches}
-{body}
+<h1>{title} ({count})</h1>
+<p class="lede">Toque num tipo de negócio para ver as empresas, e numa empresa para ver a mensagem.
+Mude o status de cada uma conforme a conversa anda. O status fica salvo neste navegador.</p>
+<div id="board"></div>
 </main>
 <script>
-// The button sends whatever is in the box, so edits are not lost.
-document.querySelectorAll("a.wa").forEach(function (a) {
-  a.addEventListener("click", function () {
-    var box = a.closest("article").querySelector("textarea");
-    a.href = a.href.split("?")[0] + "?text=" + encodeURIComponent(box.value);
+{board_js}
+</script>
+<script>
+(function () {
+  var leads = {data};
+  var KEY = "leadstatus:";
+  leads.forEach(function (l) {
+    try {
+      var saved = JSON.parse(localStorage.getItem(KEY + l.id) || "null");
+      if (saved) { l.status = saved.status; l.status_at = saved.at; }
+    } catch (e) { /* storage blocked: start from the exported status */ }
   });
-});
+  LeadBoard.mount(document.getElementById("board"), {
+    leads: leads,
+    save: function (id, status) {
+      try {
+        localStorage.setItem(KEY + id, JSON.stringify({status: status, at: new Date().toISOString().slice(0, 10)}));
+        return Promise.resolve(true);
+      } catch (e) { return Promise.resolve(false); }
+    },
+    onError: function (msg) { alert(msg + " Este navegador não deixa salvar; use a planilha."); }
+  });
+})();
 </script>
 </body></html>
 """

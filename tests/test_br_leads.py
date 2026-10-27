@@ -203,23 +203,20 @@ def test_message_without_signals_or_sender_is_still_usable():
     assert link == "https://wa.me/5516991234567?text=Oi%2C%20tudo%20bem%3F"
 
 
-@pytest.mark.asyncio
-async def test_html_page_escapes_and_has_buttons(state):
+def test_html_page_embeds_the_board_and_is_injection_safe():
+    import json as _json
+    import re
     from harvey.leads import to_html
-    rows = [{"company_name": "Bar <b>do</b> João", "industry": "bar",
-             "phone": "(16) 99123-4567", "address": "Centro", "maps_url": "",
-             "signals": "NO_WEBSITE", "whatsapp_message": "Oi!",
-             "whatsapp_link": "https://wa.me/5516991234567?text=Oi%21",
-             "phone_type": "mobile", "score": 60, "rating": 4.8, "review_count": 30},
-            {"company_name": "Fixo", "industry": "", "phone": "(16) 3322-1100",
-             "address": "", "maps_url": "", "signals": "",
-             "whatsapp_message": "Oi!", "whatsapp_link": "",
-             "phone_type": "landline", "score": 0, "rating": "", "review_count": ""}]
-    page = to_html(rows)
-    assert "Bar &lt;b&gt;do&lt;/b&gt; João" in page
-    assert page.count("Abrir no WhatsApp") == 1
-    assert "sem site" in page and "Leads (2)" in page
-    assert "<th>Nicho</th>" in page
+    rows = [{"id": "c1", "company_name": "Bar </script><script>alert(1)</script>",
+             "industry": "bar", "phone": "(16) 99123-4567", "status": "negociando",
+             "status_at": "2026-10-27", "whatsapp_message": "Oi!", "score": 60}]
+    page = to_html(rows, title="Leads de Teste")
+    assert "<title>Leads de Teste</title>" in page
+    assert "window.LeadBoard" in page and ".lb-niche" in page
+    # The data block cannot close the script tag early.
+    assert page.count("</script>") == 2
+    data = re.search(r"var leads = (\[.*?\]);\n", page, re.S).group(1)
+    assert _json.loads(data)[0]["status"] == "negociando"
 
 
 # ── booking detection for Brazilian sites ──

@@ -71,9 +71,9 @@ reivindicado, sem agendamento online etc.). Você envia do seu próprio WhatsApp
 harvey leads --nome "Seu Nome" --empresa "Sua Empresa"
 ```
 
-- `leads.html`: abra no navegador (ou no celular). Cada empresa tem a mensagem
-  numa caixa que você pode editar e um botão **Abrir no WhatsApp**, que abre a
-  conversa já com o texto digitado. É só revisar e apertar enviar.
+- `leads.html`: abra no navegador (ou no celular). Mesma lista da aba Leads,
+  agrupada por tipo de negócio, com status por empresa. Os status ficam salvos
+  no navegador em que você marcou; **Baixar planilha** exporta tudo com o status.
 - `leads.csv`: as mesmas mensagens na coluna `whatsapp_message`, e o link com o
   texto em `whatsapp_link`.
 - Telefone fixo não tem botão, mas a mensagem serve de roteiro para ligar ou
@@ -118,8 +118,13 @@ Na aba **Leads**:
    **Buscar**. A lista se atualiza sozinha enquanto ele procura e lê os sites.
 2. Coloque seu nome em **Quem assina a mensagem** e salve.
 3. Veja a tabela por tipo de negócio para decidir por onde começar.
-4. Em cada empresa, revise a mensagem (dá para editar), clique em **Abrir no
-   WhatsApp**, envie, e depois clique em **Já contatei** para tirar da fila.
+4. As empresas ficam agrupadas por tipo de negócio: clique na setinha para ver
+   a lista, e numa empresa para ver a mensagem. Revise (dá para editar), clique
+   em **Abrir no WhatsApp** e envie. O status muda sozinho para "Mensagem
+   enviada".
+5. Conforme a conversa anda, mude o status: **Não contatado**, **Mensagem
+   enviada**, **Em negociação**, **Venda fechada** ou **Sem interesse**. Os
+   botões no topo filtram por status e mostram quantas empresas há em cada um.
 
 A chave do Serper ou do Google pode ser colocada no arquivo `.env`
 (`SERPER_API_KEY=...`). **Baixar planilha** gera o mesmo `leads.csv`.

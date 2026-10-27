@@ -1,0 +1,73 @@
+/* Lead board — shared by the dashboard and the standalone leads.html.
+   Uses the dashboard's tokens (--panel, --border, --text-2, --s-good...). */
+
+.lb { font-size: 14px; }
+.lb-toolbar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; }
+.lb-search { flex: 1 1 240px; min-width: 0; padding: 8px 10px; font: inherit; color: var(--text);
+             background: var(--panel); border: 1px solid var(--border-strong); border-radius: var(--r-md, 5px); }
+.lb-check { display: flex; gap: 6px; align-items: center; color: var(--text-2); font-size: 13px; cursor: pointer; }
+.lb-btn { font: inherit; font-size: 13px; padding: 6px 12px; border-radius: var(--r-md, 5px); cursor: pointer;
+          background: none; color: var(--text-2); border: 1px solid var(--border-strong); }
+.lb-btn:hover { color: var(--text); border-color: var(--text-3); }
+.lb-wa { background: var(--s-good); border-color: var(--s-good); color: var(--panel); font-weight: 600; }
+.lb-wa:hover { opacity: .88; color: var(--panel); border-color: var(--s-good); }
+
+.lb-chips { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 14px; }
+.lb-chip { font: inherit; font-size: 12px; padding: 4px 10px; border-radius: 999px; cursor: pointer;
+           background: var(--panel); color: var(--text-2); border: 1px solid var(--border); }
+.lb-chip b { font-weight: 600; margin-left: 3px; }
+.lb-chip.on { border-color: var(--text); color: var(--text); background: var(--panel-raised); }
+
+/* Status colours: one hue per state, used by chips, selects and row edges. */
+.st-novo          { --st: var(--text-3);   --st-bg: var(--panel-raised); }
+.st-enviado       { --st: var(--s-active); --st-bg: var(--s-active-bg); }
+.st-negociando    { --st: var(--s-wait);   --st-bg: var(--s-wait-bg); }
+.st-fechado       { --st: var(--s-good);   --st-bg: var(--s-good-bg); }
+.st-sem_interesse { --st: var(--s-bad);    --st-bg: var(--s-bad-bg); }
+.lb-chip.on[class*="st-"]:not(.st-todos) { border-color: var(--st); color: var(--st); background: var(--st-bg); }
+
+.lb-niche { background: var(--panel); border: 1px solid var(--border); border-radius: var(--r-md, 5px);
+            margin-bottom: 10px; }
+.lb-niche > summary { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 12px 14px;
+                      cursor: pointer; list-style: none; }
+.lb-niche > summary::-webkit-details-marker, .lb-lead > summary::-webkit-details-marker { display: none; }
+.lb summary::before, .lb summary::after { content: none !important; display: none !important; }
+.lb-arrow { width: 0; height: 0; border-left: 6px solid var(--text-2); border-top: 5px solid transparent;
+            border-bottom: 5px solid transparent; transition: transform .15s; flex-shrink: 0; }
+.lb-niche[open] > summary .lb-arrow { transform: rotate(90deg); }
+.lb-niche-name { font-weight: 600; display: inline-block; }
+.lb-niche-name::first-letter { text-transform: uppercase; }
+.lb-niche-count, .lb-niche-score { font-size: 12px; color: var(--text-3); }
+.lb-niche-score { margin-left: auto; }
+.lb-minis { display: flex; gap: 4px; }
+.lb-mini { font-size: 11px; font-weight: 600; padding: 0 6px; border-radius: 8px; color: var(--st); background: var(--st-bg); }
+.lb-leads { border-top: 1px solid var(--border); }
+
+.lb-lead { border-bottom: 1px solid var(--border); border-left: 3px solid var(--st); }
+.lb-lead:last-child { border-bottom: none; }
+.lb-lead > summary { display: flex; align-items: center; gap: 10px; padding: 9px 12px; cursor: pointer;
+                     list-style: none; flex-wrap: wrap; }
+.lb-lead > summary:hover { background: var(--panel-raised); }
+.lb-name { font-weight: 500; flex: 1 1 180px; min-width: 0; overflow-wrap: anywhere; }
+.lb-meta { font-size: 12px; color: var(--text-3); }
+.lb-score { font-family: var(--mono, ui-monospace, monospace); font-size: 12px; padding: 0 7px; border-radius: 9px;
+            border: 1px solid var(--border-strong); color: var(--text-2); }
+.lb-status { font: inherit; font-size: 12px; padding: 4px 6px; border-radius: var(--r-md, 5px); cursor: pointer;
+             color: var(--st); background: var(--st-bg); border: 1px solid var(--st); }
+.lb-body { padding: 4px 14px 14px; }
+.lb-info { font-size: 12px; color: var(--text-2); margin-bottom: 6px; overflow-wrap: anywhere; }
+.lb-info a { color: inherit; }
+.lb-tags { display: flex; gap: 5px; flex-wrap: wrap; margin-bottom: 6px; }
+.lb-tag { font-size: 11px; padding: 1px 7px; border-radius: 8px; background: var(--s-note-bg); color: var(--s-note); }
+.lb-msg { width: 100%; box-sizing: border-box; font: inherit; font-size: 13px; line-height: 1.45; padding: 8px;
+          color: var(--text); background: var(--bg); border: 1px solid var(--border); border-radius: var(--r-md, 5px);
+          resize: vertical; }
+.lb-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 8px; }
+.lb-note { font-size: 12px; color: var(--text-3); }
+.lb-empty { color: var(--text-3); font-size: 13px; }
+
+@media (max-width: 520px) {
+  .lb-niche-score { margin-left: 0; }
+  .lb-lead > summary { gap: 6px 8px; }
+  .lb-name { flex-basis: 100%; }
+}

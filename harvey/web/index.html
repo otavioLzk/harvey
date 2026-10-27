@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Harvey — Command Deck</title>
 <link rel="stylesheet" href="/static/app.css">
+<link rel="stylesheet" href="/static/leads-board.css">
 </head>
 <body>
 
@@ -138,11 +139,10 @@
 
 <!-- Leads: worked by hand over WhatsApp -->
 <div id="leads" class="section" lang="pt-BR">
-  <div class="section-head" style="display:flex;align-items:flex-end;justify-content:space-between;gap:16px;flex-wrap:wrap">
+  <div class="section-head">
     <div><h2>Leads</h2>
       <p>Empresas da sua cidade, ordenadas por potencial, com a mensagem pronta.
          Você revisa, abre no WhatsApp e envia.</p></div>
-    <a class="btn btn-secondary btn-sm" href="/api/export/leads.csv" download>Baixar planilha</a>
   </div>
 
   <div class="leads-setup">
@@ -184,14 +184,8 @@
     </div>
   </div>
 
-  <div id="lead-niches"></div>
-
-  <div class="lead-filters">
-    <label><input type="checkbox" id="lead-show-done" onchange="renderLeads()"> Mostrar já contatados</label>
-    <label><input type="checkbox" id="lead-mobile-only" onchange="renderLeads()"> Só celular</label>
-    <span class="muted" id="lead-count"></span>
-  </div>
-  <div id="lead-list"></div>
+  <div class="subhead">Empresas por tipo de negócio</div>
+  <div id="lead-board"></div>
 </div>
 
 <!-- Companies -->
@@ -474,6 +468,7 @@
 
 </main>
 
+<script src="/static/leads-board.js"></script>
 <script src="/static/app.js"></script>
 </body>
 </html>

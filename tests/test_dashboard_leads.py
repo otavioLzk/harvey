@@ -1,4 +1,4 @@
-"""Dashboard Leads tab: the list, who signs it, the contacted queue, terms."""
+"""Dashboard Leads tab: the list, who signs it, lead statuses, terms."""
 
 import asyncio
 import tempfile
@@ -31,7 +31,7 @@ def _add(db, name, phone):
     return asyncio.run(go())
 
 
-def test_leads_list_sign_and_mark_contacted(client):
+def test_leads_list_sign_and_set_status(client):
     cid = _add(client.db_path, "Barbearia do Léo", "(35) 99811-2233")
     _add(client.db_path, "Fixo", "(35) 3531-2020")
 
@@ -42,16 +42,17 @@ def test_leads_list_sign_and_mark_contacted(client):
     assert client.post("/api/leads/sender", json={"name": "Tavim", "company": ""}).json()["success"]
     lead = client.get("/api/leads").json()["leads"][0]
     assert "Meu nome é Tavim." in lead["whatsapp_message"]
-    assert lead["contacted_at"] == ""
+    assert lead["status"] == "novo"
 
-    r = client.post(f"/api/leads/{cid}/contacted", json={"contacted": True}).json()
-    assert r["contacted_at"]
+    r = client.post(f"/api/leads/{cid}/status", json={"status": "negociando"}).json()
+    assert r["success"] and r["status_at"]
     lead = next(l for l in client.get("/api/leads").json()["leads"] if l["id"] == cid)
-    assert lead["contacted_at"] == r["contacted_at"]
+    assert (lead["status"], lead["status_at"]) == ("negociando", r["status_at"])
 
-    client.post(f"/api/leads/{cid}/contacted", json={"contacted": False})
+    bad = client.post(f"/api/leads/{cid}/status", json={"status": "talvez"})
+    assert bad.status_code == 400
     lead = next(l for l in client.get("/api/leads").json()["leads"] if l["id"] == cid)
-    assert lead["contacted_at"] == ""
+    assert lead["status"] == "negociando"
 
 
 def test_leads_csv_download(client):
@@ -72,4 +73,6 @@ def test_estimate_uses_terms_typed_in_the_tab(client):
 
 def test_leads_tab_is_in_the_page(client):
     html = client.get("/").text
-    assert "showTab('leads'" in html and 'id="lead-list"' in html
+    assert "showTab('leads'" in html and 'id="lead-board"' in html
+    assert "/static/leads-board.js" in html
+    assert client.get("/static/leads-board.js").status_code == 200
