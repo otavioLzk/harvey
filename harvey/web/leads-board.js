@@ -14,6 +14,13 @@
     ['sem_interesse', 'Sem interesse'],
   ];
   const STATUS_LABEL = Object.fromEntries(STATUSES);
+  // Drafts open with "Bom dia / Boa tarde / Boa noite"; keep it true to the
+  // clock of this computer, whenever the list was generated.
+  function greeting() {
+    const h = new Date().getHours();
+    return h >= 5 && h < 12 ? 'Bom dia' : h >= 12 && h < 18 ? 'Boa tarde' : 'Boa noite';
+  }
+  const withGreeting = msg => String(msg || '').replace(/^(Bom dia|Boa tarde|Boa noite)\b/, greeting());
   const SIGNAL_LABELS = {
     NO_WEBSITE: 'sem site', WHATSAPP_ONLY_BOOKING: 'agenda só pelo WhatsApp',
     UNCLAIMED_LISTING: 'perfil do Google não reivindicado',
@@ -124,7 +131,7 @@
           '<div class="lb-info">' + esc(l.phone || 'sem telefone') + (l.address ? ' · ' + esc(l.address) : '') +
             (links ? ' · ' + links : '') + (l.status_at ? ' · status desde ' + esc(l.status_at) : '') + '</div>' +
           (tags ? '<div class="lb-tags">' + tags + '</div>' : '') +
-          '<textarea class="lb-msg" rows="6" data-i="' + i + '">' + esc(l.whatsapp_message) + '</textarea>' +
+          '<textarea class="lb-msg" rows="10" data-i="' + i + '">' + esc(l.whatsapp_message = withGreeting(l.whatsapp_message)) + '</textarea>' +
           '<div class="lb-actions">' +
             (mobile && l.phone_e164
               ? '<button type="button" class="lb-btn lb-wa" data-i="' + i + '">Abrir no WhatsApp</button>'
@@ -199,12 +206,12 @@
       root.querySelectorAll('.lb-wa').forEach(b => b.addEventListener('click', () => {
         const l = state.leads[Number(b.dataset.i)];
         window.open('https://wa.me/' + l.phone_e164.replace('+', '') + '?text=' +
-                    encodeURIComponent(l.whatsapp_message), '_blank', 'noopener');
+                    encodeURIComponent(withGreeting(l.whatsapp_message)), '_blank', 'noopener');
         if ((l.status || 'novo') === 'novo') setStatus(Number(b.dataset.i), 'enviado');
       }));
       root.querySelectorAll('.lb-copy').forEach(b => b.addEventListener('click', async () => {
         const l = state.leads[Number(b.dataset.i)];
-        try { await navigator.clipboard.writeText(l.whatsapp_message); b.textContent = 'Copiado'; }
+        try { await navigator.clipboard.writeText(withGreeting(l.whatsapp_message)); b.textContent = 'Copiado'; }
         catch (e) { b.textContent = 'Selecione e copie'; }
         setTimeout(() => { b.textContent = 'Copiar texto'; }, 1500);
       }));

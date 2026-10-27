@@ -184,21 +184,42 @@ def test_message_names_the_strongest_signal_and_signs():
                            "rating": 4.7, "review_count": 212},
                           sender="Tavim", company="TS Sites")
     assert "Padaria Pão Bom" in msg
-    assert "Meu nome é Tavim, da TS Sites." in msg
+    assert "Me chamo Tavim, da TS Sites, e trabalho criando sites" in msg
     assert "ainda não têm um site" in msg          # NO_WEBSITE wins
-    assert "Nota 4,7 com 212 avaliações" in msg
+    assert "parabéns pela nota 4,7 com 212 avaliações" in msg
+    assert "prévia de como ficaria o site de vocês" in msg
     assert msg == compose_message({"company_name": "Padaria Pão Bom",
                                    "signals": "NO_ONLINE_BOOKING;NO_WEBSITE",
                                    "rating": 4.7, "review_count": 212},
                                   sender="Tavim", company="TS Sites")
 
 
+def test_message_greeting_follows_the_clock():
+    from datetime import datetime
+    from harvey.br_messages import compose_message, greeting
+    assert [greeting(datetime(2026, 1, 1, h)) for h in (4, 5, 11, 12, 17, 18, 23)] == \
+        ["Boa noite", "Bom dia", "Bom dia", "Boa tarde", "Boa tarde", "Boa noite", "Boa noite"]
+    msg = compose_message({"company_name": "Ótica Sol"}, now=datetime(2026, 1, 1, 9))
+    assert msg.startswith("Bom dia, Ótica Sol!")
+
+
+def test_greeting_uses_the_name_a_person_would_say():
+    from harvey.br_messages import short_name
+    assert short_name("Dra Ana Lima | Botox | Preenchimento") == "Dra Ana Lima"
+    assert short_name("Salão Bela em São Sebastião do Paraíso MG") == "Salão Bela"
+    assert short_name("DENTISTA - Dra. Thaís Lacerda") == "Dra. Thaís Lacerda"
+    assert short_name("Odonto Paraíso") == "Odonto Paraíso"
+    assert short_name("São Sebastião do Paraíso") == "São Sebastião do Paraíso"
+
+
 def test_message_without_signals_or_sender_is_still_usable():
     from harvey.br_messages import compose_message, wa_link
     msg = compose_message({"company_name": "Oficina do Zé", "rating": 4.0,
                            "review_count": 3})
-    assert "Meu nome" not in msg and "Nota" not in msg
-    assert msg.endswith("?")
+    assert "Me chamo" not in msg and "nota" not in msg
+    assert msg.startswith(("Bom dia, Oficina do Zé!", "Boa tarde, Oficina do Zé!",
+                           "Boa noite, Oficina do Zé!"))
+    assert msg.endswith("?") and msg.count("\n\n") == 3
     link = wa_link("+5516991234567", "Oi, tudo bem?")
     assert link == "https://wa.me/5516991234567?text=Oi%2C%20tudo%20bem%3F"
 
