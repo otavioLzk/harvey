@@ -155,7 +155,7 @@ async def test_serper_places_parses_and_pages():
         {"title": f"Loja {i}", "phoneNumber": "(16) 99123-45%02d" % i,
          "address": "Centro", "cid": str(i),
          "website": "https://instagram.com/x" if i == 0 else ""}
-        for i in range(20)]}
+        for i in range(10)]}
     page2 = {"places": [{"title": "Clínica", "phoneNumber": "(16) 3322-1100",
                          "website": "https://clinica.com.br", "cid": "99",
                          "rating": 4.5, "ratingCount": 12}]}
@@ -171,7 +171,7 @@ async def test_serper_places_parses_and_pages():
     provider = D.SerperPlaces()
     out = await provider.fetch(client, {"serper_api_key": "k"},
                                D.DiscoveryQuery(term="loja", location="Franca, SP"))
-    assert len(out) == 21 and len(seen) == 2
+    assert len(out) == 11 and len(seen) == 2
     assert out[0].has_website is False and out[0].domain == ""
     assert out[-1].domain == "clinica.com.br" and out[-1].review_count == 12
     assert out[-1].source_url == "https://maps.google.com/?cid=99"
@@ -260,6 +260,8 @@ async def test_whatsapp_link_without_booking_tool_is_whatsapp_only():
     got = await _booking('<html><a href="https://wa.me/5535999990000">'
                          'Agende pelo WhatsApp</a></html>')
     assert got == {"NO_ONLINE_BOOKING": 1, "WHATSAPP_ONLY_BOOKING": 1}
+    got = await _booking('<html><a href="https://wa.link/abc123">Fale conosco</a></html>')
+    assert got == {"NO_ONLINE_BOOKING": 1, "WHATSAPP_ONLY_BOOKING": 1}
     got = await _booking("<html><p>Ligue para nós</p></html>")
     assert got == {"NO_ONLINE_BOOKING": 1, "WHATSAPP_ONLY_BOOKING": 0}
 
@@ -302,3 +304,10 @@ async def test_signals_recorded_as_false_are_not_pitched_and_score_orders(state)
     assert niches["barbearia"]["total"] == 2
     assert niches["barbearia"]["no_booking"] == 1
     assert niches["dentista"]["no_website"] == 1
+
+
+def test_link_in_bio_pages_are_not_websites():
+    q = D.DiscoveryQuery(term="estética")
+    for url in ("https://bio.site/clinica", "https://linkme.bio/x", "https://bit.ly/abc"):
+        biz = D.SerperPlaces()._parse({"title": "X", "website": url, "cid": "1"}, q)
+        assert biz.has_website is False and biz.domain == "", url

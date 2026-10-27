@@ -674,8 +674,13 @@ class GooglePlaces(DiscoveryProvider):
     PAGE_SIZE = 20
     MAX_PAGES = 3
     COST_PER_REQUEST = 0.035
+    # Pages that are not the business's own website: social profiles,
+    # link-in-bio pages, link shorteners and local directories.
     SOCIAL = ("instagram.com", "facebook.com", "fb.com", "linktr.ee",
-              "wa.me", "whatsapp.com", "linkin.bio", "beacons.ai")
+              "wa.me", "wa.link", "whatsapp.com", "linkin.bio", "beacons.ai",
+              "bio.site", "linkme.bio", "corpora.bio", "lnk.bio", "taplink.cc",
+              "bit.ly", "tinyurl.com", "cliqueiachei.com.br", "clickdisk.com.br",
+              "tiktok.com", "youtube.com", "google.com", "g.page", "goo.gl")
 
     def estimate(self, queries):
         pages = lambda q: min(self.MAX_PAGES, max(1, -(-q.limit // self.PAGE_SIZE)))
@@ -750,15 +755,15 @@ class SerperPlaces(DiscoveryProvider):
     kind = "listings"
     blurb = ("Google Maps listings with phone and website via Serper. Free to "
              "start: 2,500 queries on signup, no credit card.")
-    cost_note = "1 query per page of ~20 places (~$0.30-$1.00 per 1,000 after the free tier)"
+    cost_note = "1 query per page of 10 places (~$0.30-$1.00 per 1,000 after the free tier)"
     free_tier = "2,500 queries free, no card required"
     signup_url = "https://serper.dev"
     env_keys = ("serper_api_key",)
     caveat = "Shares the SERPER_API_KEY and its credits with the Serper provider."
 
     URL = "https://google.serper.dev/places"
-    PAGE_SIZE = 20
-    MAX_PAGES = 3
+    PAGE_SIZE = 10          # what /places returns per page
+    MAX_PAGES = 6
     COST_PER_REQUEST = 0.001
 
     def estimate(self, queries):

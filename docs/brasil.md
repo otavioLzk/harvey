@@ -24,7 +24,7 @@ Confira antes de abordar.
 
 **Serper Maps** é o próximo passo, ainda grátis: cadastro em serper.dev só com
 e-mail, sem cartão, e 2.500 buscas grátis. Ele traz dados do Google Maps
-(telefone, site, nota), bem mais completos que o OSM. Cada página de ~20
+(telefone, site, nota), bem mais completos que o OSM. Cada página de 10
 empresas gasta uma busca.
 
 ```bash
