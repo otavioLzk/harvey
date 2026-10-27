@@ -21,19 +21,21 @@
     BLOG_STALE: 'site desatualizado', RUNNING_GOOGLE_ADS: 'anuncia no Google',
     RUNNING_META_ADS: 'anuncia no Instagram/Facebook', INCUMBENT_AGENCY: 'já tem agência',
   };
-  const OPEN_KEY = 'leadboard-open-niches';
+  // Potential 0-100 read as a band, so nobody has to interpret a number.
+  const BANDS = [
+    [70, 'alto', '🔥', 'Potencial alto'],
+    [60, 'bom', '👍', 'Potencial bom'],
+    [45, 'medio', '🙂', 'Potencial médio'],
+    [0, 'baixo', '💤', 'Potencial baixo'],
+  ];
+  function band(score) {
+    const [, key, emoji, label] = BANDS.find(b => (score || 0) >= b[0]);
+    return {key, emoji, label};
+  }
 
   function esc(s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g, c =>
       ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
-  }
-
-  function readOpen() {
-    try { return new Set(JSON.parse(localStorage.getItem(OPEN_KEY) || '[]')); }
-    catch (e) { return new Set(); }
-  }
-  function writeOpen(set) {
-    try { localStorage.setItem(OPEN_KEY, JSON.stringify([...set])); } catch (e) { /* private mode */ }
   }
 
   function nicheOf(l) { return (l.industry || 'sem categoria').trim().toLowerCase(); }
@@ -42,7 +44,7 @@
     const state = {
       leads: opts.leads || [],
       filter: 'todos', query: '', mobileOnly: false,
-      open: readOpen(), openLeads: new Set(),
+      open: new Set(), openLeads: new Set(),   // every niche starts closed
     };
     const save = opts.save || (() => Promise.resolve(true));
 
@@ -83,6 +85,12 @@
       }));
     }
 
+    function potBadge(score, short) {
+      const b = band(score);
+      return '<span class="lb-pot pot-' + b.key + '" title="' + esc(b.label) + ' (' + (score || 0) + ' de 100)">' +
+        b.emoji + ' ' + esc(short ? b.label.replace('Potencial ', '') : b.label) + '</span>';
+    }
+
     function statusSelect(l, i) {
       return '<select class="lb-status st-' + esc(l.status || 'novo') + '" data-i="' + i + '" aria-label="Status">' +
         STATUSES.map(([k, label]) => '<option value="' + k + '"' +
@@ -109,7 +117,7 @@
           '<span class="lb-name">' + esc(l.company_name) + '</span>' +
           '<span class="lb-meta">' + esc(rating) + (rating ? ' · ' : '') +
             (mobile ? 'celular' : (l.phone ? 'fixo' : 'sem telefone')) + '</span>' +
-          '<span class="lb-score" title="Potencial de 0 a 100">' + (l.score || 0) + '</span>' +
+          potBadge(l.score, true) +
           statusSelect(l, i) +
         '</summary>' +
         '<div class="lb-body">' +
@@ -146,7 +154,8 @@
         const w = k => { const xs = all.get(k); return xs.reduce((s, l) => s + (l.score || 0), 0); };
         return w(b) - w(a) || a.localeCompare(b);
       });
-      const searching = Boolean(state.query) || state.filter !== 'todos' || state.mobileOnly;
+      // Typing a name opens the niches it matches; nothing else opens one.
+      const searching = Boolean(state.query);
 
       $('.lb-groups').innerHTML = order.length ? order.map(k => {
         const items = groups.get(k).slice().sort((a, b) => (b.score || 0) - (a.score || 0));
@@ -163,7 +172,7 @@
             '<span class="lb-niche-count">' + items.length + (items.length !== every.length ? ' de ' + every.length : '') +
               ' empresa' + (every.length === 1 ? '' : 's') + '</span>' +
             '<span class="lb-minis">' + counts + '</span>' +
-            '<span class="lb-niche-score" title="Potencial médio">potencial ' + avg + '</span>' +
+            '<span class="lb-niche-score">' + potBadge(avg, false) + '</span>' +
           '</summary>' +
           '<div class="lb-leads">' + items.map(leadRow).join('') + '</div>' +
         '</details>';
@@ -175,7 +184,6 @@
       root.querySelectorAll('.lb-niche').forEach(d => d.addEventListener('toggle', () => {
         const k = d.dataset.niche;
         if (d.open) state.open.add(k); else state.open.delete(k);
-        writeOpen(state.open);
       }));
       root.querySelectorAll('.lb-lead').forEach(d => d.addEventListener('toggle', () => {
         if (d.open) state.openLeads.add(d.dataset.id); else state.openLeads.delete(d.dataset.id);
@@ -229,13 +237,14 @@
 
   function downloadCsv(leads) {
     const cols = [['company_name', 'empresa'], ['industry', 'nicho'], ['status', 'status'],
-      ['status_at', 'status_desde'], ['score', 'potencial'], ['phone', 'telefone'],
+      ['status_at', 'status_desde'], ['potencial', 'potencial'], ['score', 'potencial_0_a_100'], ['phone', 'telefone'],
       ['phone_type', 'tipo_telefone'], ['rating', 'nota'], ['review_count', 'avaliacoes'],
       ['address', 'endereco'], ['website', 'site'], ['maps_url', 'mapa'],
       ['whatsapp_message', 'mensagem']];
     const cell = v => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"';
     const lines = [cols.map(c => c[1]).join(',')].concat(leads.map(l => cols.map(([k]) =>
-      cell(k === 'status' ? STATUS_LABEL[l.status || 'novo'] : l[k])).join(',')));
+      cell(k === 'status' ? STATUS_LABEL[l.status || 'novo']
+           : k === 'potencial' ? band(l.score).label.replace('Potencial ', '') : l[k])).join(',')));
     const blob = new Blob(['﻿' + lines.join('\r\n')], {type: 'text/csv;charset=utf-8'});
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
