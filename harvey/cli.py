@@ -370,6 +370,46 @@ def cmd_export(args):
     asyncio.run(_export())
 
 
+def cmd_leads(args):
+    """Export discovered businesses as a phone-first lead list (WhatsApp/visit)."""
+    from harvey.state import StateManager
+    from harvey.config import load_config
+    from harvey.leads import export_leads_csv, niche_report
+
+    async def _leads():
+        state = StateManager()
+        await state.init_db()
+        persona = load_config().persona
+        sender = args.nome if args.nome is not None else (
+            "" if persona.name == "Harvey" else persona.name)
+        company = args.empresa if args.empresa is not None else (
+            "" if persona.company == "Your Company" else persona.company)
+        rows = await export_leads_csv(
+            state, args.out, whatsapp_only=args.whatsapp,
+            no_website_only=args.no_website, sender=sender, company=company,
+            html_path=args.html,
+        )
+        count = len(rows)
+        print(f"\n  Exported {count} lead(s) to {args.out}"
+              + (f" and {args.html}" if args.html else ""))
+        if not sender:
+            print('  Tip: --nome "Seu Nome" signs each message with your name.')
+        if count == 0:
+            print("  Nothing yet? Run: harvey discover --provider google_places "
+                  '--city "Sua Cidade, UF"\n')
+        else:
+            print("  Sorted by potential score (0-100).\n")
+            print(f"  {'Nicho':<28}{'Total':>6}{'Celular':>9}{'Sem site':>10}"
+                  f"{'Sem agenda':>12}{'Bem avaliados':>15}{'Potencial':>11}")
+            for n in niche_report(rows):
+                print(f"  {n['niche'][:27]:<28}{n['total']:>6}{n['mobile']:>9}"
+                      f"{n['no_website']:>10}{n['no_booking']:>12}"
+                      f"{n['well_reviewed']:>15}{n['avg_score']:>11}")
+            print()
+
+    asyncio.run(_leads())
+
+
 def cmd_gmail(args):
     """Gmail provider utilities (auth / test)."""
     from harvey.config import load_env
@@ -726,6 +766,24 @@ def main():
     sub.add_argument("--status", default="", help="Comma-separated pipeline statuses (e.g. new,queued)")
     sub.add_argument("--all", action="store_true", help="Export everything, no filters")
     sub.set_defaults(func=cmd_export)
+
+    # harvey leads
+    sub = subparsers.add_parser(
+        "leads", help="Export businesses as a phone/WhatsApp lead list (CSV)"
+    )
+    sub.add_argument("--out", default="leads.csv", help="Output file (default: leads.csv)")
+    sub.add_argument("--whatsapp", action="store_true",
+                     help="Only businesses with a mobile (WhatsApp) number")
+    sub.add_argument("--no-website", action="store_true",
+                     help="Only businesses without a website")
+    sub.add_argument("--html", default="leads.html",
+                     help="Also write a page with one 'Abrir no WhatsApp' button "
+                          "per lead (default: leads.html; empty to skip)")
+    sub.add_argument("--nome", default=None,
+                     help="Your name, used to sign each message (default: persona.name)")
+    sub.add_argument("--empresa", default=None,
+                     help="Your business name in the message (default: persona.company)")
+    sub.set_defaults(func=cmd_leads)
 
     # harvey gmail auth|test
     sub = subparsers.add_parser("gmail", help="Gmail provider setup")

@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Harvey — Command Deck</title>
 <link rel="stylesheet" href="/static/app.css">
+<link rel="stylesheet" href="/static/leads-board.css">
 </head>
 <body>
 
@@ -29,6 +30,7 @@
 
 <nav>
   <button class="active" onclick="showTab('today', this)">Today<span class="nav-count" id="nav-today"></span></button>
+  <button onclick="showTab('leads', this)">Leads<span class="nav-count" id="nav-leads"></span></button>
   <button onclick="showTab('signals', this)">Signals<span class="nav-count" id="nav-signals"></span></button>
   <button onclick="showTab('discover', this)">Discover</button>
   <button onclick="showTab('companies', this)">Companies</button>
@@ -133,6 +135,57 @@
     </div>
   </div>
   <div id="discover-result"></div>
+</div>
+
+<!-- Leads: worked by hand over WhatsApp -->
+<div id="leads" class="section" lang="pt-BR">
+  <div class="section-head">
+    <div><h2>Leads</h2>
+      <p>Empresas da sua cidade, ordenadas por potencial, com a mensagem pronta.
+         Você revisa, abre no WhatsApp e envia.</p></div>
+  </div>
+
+  <div class="leads-setup">
+    <div class="card">
+      <h2>Buscar empresas</h2>
+      <div class="form-row">
+        <div class="form-group" style="flex:2">
+          <label class="form-label" for="lead-city">Cidade</label>
+          <input class="form-input" id="lead-city" placeholder="São Sebastião do Paraíso, MG">
+        </div>
+        <div class="form-group" style="flex:3">
+          <label class="form-label" for="lead-terms">Tipos de negócio (separe por vírgula)</label>
+          <input class="form-input" id="lead-terms" placeholder="barbearia, salão de beleza, clínica de estética, dentista">
+        </div>
+      </div>
+      <div class="form-group" style="margin-top:12px">
+        <label class="form-label" for="lead-provider">Fonte</label>
+        <select class="form-input" id="lead-provider"></select>
+        <div class="muted lead-hint" id="lead-provider-hint"></div>
+      </div>
+      <div class="btn-group">
+        <button class="btn btn-primary" id="lead-search" onclick="searchLeads()">Buscar</button>
+        <span class="muted lead-hint" id="lead-search-status"></span>
+      </div>
+    </div>
+    <div class="card">
+      <h2>Quem assina a mensagem</h2>
+      <div class="form-group">
+        <label class="form-label" for="lead-name">Seu nome</label>
+        <input class="form-input" id="lead-name" placeholder="Tavim">
+      </div>
+      <div class="form-group" style="margin-top:12px">
+        <label class="form-label" for="lead-company">Sua empresa (opcional)</label>
+        <input class="form-input" id="lead-company">
+      </div>
+      <div class="btn-group">
+        <button class="btn btn-secondary btn-sm" onclick="saveLeadSender()">Salvar</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="subhead">Empresas por tipo de negócio</div>
+  <div id="lead-board"></div>
 </div>
 
 <!-- Companies -->
@@ -415,6 +468,7 @@
 
 </main>
 
+<script src="/static/leads-board.js"></script>
 <script src="/static/app.js"></script>
 </body>
 </html>

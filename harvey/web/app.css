@@ -583,3 +583,8 @@ details[open] summary::before { content: '– '; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .001ms !important; transition-duration: .001ms !important; }
 }
+
+/* ── Leads ── */
+.leads-setup { display: grid; grid-template-columns: 2fr 1fr; gap: 16px; align-items: start; }
+@media (max-width: 860px) { .leads-setup { grid-template-columns: 1fr; } }
+.lead-hint { font-size: 12px; margin-top: 4px; }

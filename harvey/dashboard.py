@@ -846,8 +846,9 @@ def _discovery_queries(body: dict, config):
     from harvey.collectors.discover import build_queries
 
     cities = [c.strip() for c in (body.get("cities") or []) if c.strip()] or None
+    terms = [t.strip() for t in (body.get("terms") or []) if t.strip()] or None
     return build_queries(
-        config, cities=cities,
+        config, cities=cities, terms=terms,
         depth=int(body.get("depth") or 30),
         limit=int(body.get("limit") or 100),
     )
@@ -1299,6 +1300,88 @@ WEB_DIR = (Path(__file__).resolve().parent / "web")
 
 TEXT_TYPES = {".css": "text/css", ".js": "text/javascript", ".svg": "image/svg+xml"}
 BINARY_TYPES = {".woff2": "font/woff2", ".woff": "font/woff", ".png": "image/png"}
+
+
+# ── Leads: phone-first list worked by hand over WhatsApp ──
+
+
+async def _lead_sender(state) -> tuple[str, str]:
+    from harvey.config import load_config
+    from harvey.leads import SENDER_COMPANY_KEY, SENDER_NAME_KEY
+
+    name = await state.get_setting(SENDER_NAME_KEY)
+    company = await state.get_setting(SENDER_COMPANY_KEY)
+    if not name and not company:
+        try:
+            persona = load_config().persona
+            name = "" if persona.name == "Harvey" else persona.name
+            company = "" if persona.company == "Your Company" else persona.company
+        except Exception:
+            pass
+    return name, company
+
+
+@app.get("/api/leads")
+async def get_leads():
+    """Every business, scored, with a drafted WhatsApp message and niche counts."""
+    try:
+        from harvey.leads import collect_leads, niche_report
+
+        state = _state()
+        await state.init_db()
+        name, company = await _lead_sender(state)
+        rows = await collect_leads(state, sender=name, company=company)
+        return {"leads": rows, "niches": niche_report(rows),
+                "sender": {"name": name, "company": company}}
+    except Exception as e:
+        logger.exception("leads load failed")
+        return {"leads": [], "niches": [], "error": str(e)}
+
+
+@app.post("/api/leads/sender")
+async def set_lead_sender(request: Request):
+    from harvey.leads import SENDER_COMPANY_KEY, SENDER_NAME_KEY
+
+    body = await request.json()
+    state = _state()
+    await state.init_db()
+    await state.set_setting(SENDER_NAME_KEY, (body.get("name") or "").strip())
+    await state.set_setting(SENDER_COMPANY_KEY, (body.get("company") or "").strip())
+    return {"success": True}
+
+
+@app.post("/api/leads/{company_id}/status")
+async def set_lead_status(company_id: str, request: Request):
+    """Where a lead stands: not contacted, messaged, negotiating, won, lost."""
+    from datetime import date
+
+    from harvey.leads import STATUS_PREFIX, STATUSES
+
+    body = await request.json()
+    status = (body.get("status") or "").strip()
+    if status not in STATUSES:
+        return JSONResponse({"success": False, "message": f"invalid status: {status!r}"},
+                            status_code=400)
+    state = _state()
+    await state.init_db()
+    today = date.today().isoformat()
+    await state.set_setting(STATUS_PREFIX + company_id, f"{status}|{today}")
+    return {"success": True, "status": status, "status_at": today}
+
+
+@app.get("/api/export/leads.csv")
+async def export_leads():
+    from harvey.leads import collect_leads, to_csv
+
+    state = _state()
+    await state.init_db()
+    name, company = await _lead_sender(state)
+    rows = await collect_leads(state, sender=name, company=company)
+    return Response(
+        ("\ufeff" + to_csv(rows)).encode("utf-8"),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": 'attachment; filename="leads.csv"'},
+    )
 
 
 @app.get("/static/{path:path}")

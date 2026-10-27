@@ -163,6 +163,7 @@ function showTab(id, btn) {
 function loadCurrentTab() {
   switch (currentTab) {
     case 'today': loadToday(); loadSetupStatus(); loadRuns(); loadTodayActivity(); break;
+    case 'leads': loadLeads(); break;
     case 'signals': loadSignals(); break;
     case 'discover': loadDiscoverProviders(); break;
     case 'companies': if (!companyDrill) loadCompanies(); break;
@@ -1376,3 +1377,133 @@ setInterval(() => {
     case 'controls': loadLogs(); break;
   }
 }, 15000);
+
+
+// ── Leads: worked by hand over WhatsApp ──
+
+let _leads = [];
+let _leadPoll = null;
+
+// Sources that make sense for local businesses, best first.
+const LEAD_PROVIDERS = ['serper_places', 'google_places', 'osm', 'dataforseo_listings'];
+
+async function loadLeads() {
+  const [data, prov] = await Promise.all([api('/api/leads'), api('/api/discover/providers')]);
+  if (!data) { document.getElementById('lead-list').innerHTML = offlineState(); return; }
+  _leads = data.leads || [];
+
+  const name = document.getElementById('lead-name');
+  const company = document.getElementById('lead-company');
+  if (document.activeElement !== name && !name.value) name.value = (data.sender || {}).name || '';
+  if (document.activeElement !== company && !company.value) company.value = (data.sender || {}).company || '';
+
+  if (prov && prov.providers) renderLeadProviders(prov);
+  renderLeadBoard();
+}
+
+function renderLeadProviders(prov) {
+  const sel = document.getElementById('lead-provider');
+  const keep = sel.value;
+  const byKey = Object.fromEntries(prov.providers.map(p => [p.key, p]));
+  const opts = LEAD_PROVIDERS.filter(k => byKey[k]).map(k => byKey[k]);
+  sel.innerHTML = opts.map(p =>
+    '<option value="' + p.key + '">' + escHtml(p.label) +
+    (p.configured ? '' : ' (precisa de chave)') + '</option>').join('');
+  const firstReady = opts.find(p => p.configured);
+  sel.value = keep || (firstReady ? firstReady.key : 'osm');
+  sel.onchange = () => leadProviderHint(byKey);
+  leadProviderHint(byKey);
+
+  const running = prov.running;
+  const btn = document.getElementById('lead-search');
+  const status = document.getElementById('lead-search-status');
+  btn.disabled = running;
+  btn.textContent = running ? 'Buscando…' : 'Buscar';
+  if (running) {
+    status.textContent = 'Buscando empresas e lendo os sites. A lista atualiza sozinha.';
+    if (!_leadPoll) _leadPoll = setInterval(() => { if (currentTab === 'leads') loadLeads(); }, 5000);
+  } else if (_leadPoll) {
+    clearInterval(_leadPoll);
+    _leadPoll = null;
+    const r = prov.last_report || {};
+    const errs = (r.errors || []).length ? ' Avisos: ' + r.errors.slice(0, 2).join(' · ') : '';
+    status.textContent = 'Busca concluída: ' + (r.new_companies || 0) + ' empresas novas.' + errs;
+  }
+}
+
+function leadProviderHint(byKey) {
+  const p = byKey[document.getElementById('lead-provider').value];
+  const el = document.getElementById('lead-provider-hint');
+  if (!p) { el.innerHTML = ''; return; }
+  el.innerHTML = escHtml(p.free_tier) + (p.configured ? '' :
+    ' · Precisa de ' + escHtml(p.env_keys.join(', ')) + ' (aba Settings ou arquivo .env) · ' +
+    '<a href="' + escHtml(p.signup_url) + '" target="_blank" rel="noopener">criar chave</a>');
+}
+
+async function searchLeads() {
+  const city = document.getElementById('lead-city').value.trim();
+  const terms = document.getElementById('lead-terms').value.split(',').map(t => t.trim()).filter(Boolean);
+  const provider = document.getElementById('lead-provider').value;
+  if (!city || !terms.length) { showToast('Preencha a cidade e pelo menos um tipo de negócio.', 'error'); return; }
+  const body = {provider, cities: [city], terms, limit: 60, max_spend: 1};
+
+  // Nothing is collected until signals are confirmed; this tab turns on the
+  // free ones, and says so, rather than failing silently.
+  const sig = await api('/api/signals');
+  if (sig && sig.summary && !sig.summary.confirmed) {
+    if (!confirm('Para marcar "sem site", "sem agendamento" etc., o Harvey precisa ' +
+                 'ativar os sinais gratuitos. Ativar agora?')) return;
+    const free = [];
+    (sig.groups || []).forEach(g => g.signals.forEach(s => {
+      if ((s.cost_note || '').toLowerCase().startsWith('free')) free.push(s.code);
+    }));
+    await api('/api/signals/status', {method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({codes: free, status: 'confirmed'})});
+  }
+
+  const est = await api('/api/discover/estimate', {method: 'POST',
+    headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)});
+  if (!est || est.error) { showToast((est && est.error) || 'Não consegui estimar a busca.', 'error'); return; }
+  if (!est.free && !confirm(est.query_count + ' buscas, custo estimado de até US$ ' +
+                            est.estimated_cost.toFixed(2) + '. Continuar?')) return;
+
+  const run = await api('/api/discover/run', {method: 'POST',
+    headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)});
+  if (run && run.success) showToast('Busca iniciada: ' + run.queries + ' pesquisas.', 'success');
+  else showToast((run && run.message) || 'Não consegui iniciar a busca.', 'error');
+  loadLeads();
+}
+
+async function saveLeadSender() {
+  const r = await api('/api/leads/sender', {method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({name: document.getElementById('lead-name').value,
+                          company: document.getElementById('lead-company').value})});
+  showToast(r ? 'Salvo. As mensagens foram atualizadas.' : 'Não consegui salvar.', r ? 'success' : 'error');
+  loadLeads();
+}
+
+let _board = null;
+
+function renderLeadBoard() {
+  const el = document.getElementById('lead-board');
+  const pending = _leads.filter(l => (l.status || 'novo') === 'novo').length;
+  navCount('nav-leads', pending);
+  if (!_leads.length) {
+    _board = null;
+    el.innerHTML = emptyState('◎', 'Nenhuma empresa ainda',
+      'Preencha a cidade e os tipos de negócio acima e clique em Buscar.');
+    return;
+  }
+  if (_board) { _board.setLeads(_leads); return; }
+  el.innerHTML = '';
+  _board = LeadBoard.mount(el, {
+    leads: _leads,
+    save: async (id, status) => {
+      const r = await api('/api/leads/' + encodeURIComponent(id) + '/status', {method: 'POST',
+        headers: {'Content-Type': 'application/json'}, body: JSON.stringify({status})});
+      return Boolean(r && r.success);
+    },
+    onChange: leads => navCount('nav-leads', leads.filter(l => (l.status || 'novo') === 'novo').length),
+    onError: msg => showToast(msg, 'error'),
+  });
+}

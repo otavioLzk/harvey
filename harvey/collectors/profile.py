@@ -94,7 +94,21 @@ META_PIXEL = (r"connect\.facebook\.net/[^\"']*fbevents\.js", r"fbq\s*\(\s*['\"]i
 BOOKING_HINTS = (r"calendly\.com", r"acuityscheduling", r"schedulicity",
                  r"squareup\.com/appointments", r"setmore", r"book(ing)?[-_]?now",
                  r"schedule[-_]?(an?[-_])?(appointment|estimate|consultation)",
-                 r"housecallpro", r"getjobber\.com", r"servicetitan")
+                 r"housecallpro", r"getjobber\.com", r"servicetitan",
+                 # Brazil: salon/clinic schedulers and Portuguese calls to book
+                 r"trinks\.com", r"booksy\.com", r"avec\.(app|beauty)", r"avecbeleza",
+                 r"doctoralia\.com", r"simplesagenda", r"salaovip", r"appbarber",
+                 r"belasis", r"feegow", r"iclinic", r"ninsaude", r"boaconsulta",
+                 r"inbarberapp", r"barberin", r"agendapro", r"agendamentoonline",
+                 r"agendor\.com\.br/agenda", r"calendar\.app\.google",
+                 r"calendar\.google\.com/calendar/appointments",
+                 r"agendamento[-_ ]online",
+                 r"agende[-_ ](j[aá]|agora|online|aqui|seu|sua)\b",
+                 r"agendar[-_ ](hor[aá]rio|consulta|online|agora|atendimento)",
+                 r"marque[-_ ](seu|sua)[-_ ](hor[aá]rio|consulta)")
+# A WhatsApp link with no booking tool means the schedule lives in a chat.
+WHATSAPP_LINKS = (r"wa\.me/", r"wa\.link/", r"whatsapp\.com/send", r"whatsapp://send",
+                  r"href=[\"'][^\"']*whatsapp")
 
 AI_CRAWLERS = ("gptbot", "google-extended", "ccbot", "anthropic-ai", "claudebot",
                "perplexitybot", "bytespider")
@@ -375,7 +389,11 @@ class ProfileCollector:
         add("NO_SCHEMA_MARKUP", num=0 if has_schema else 1)
 
         # Booking gap
-        add("NO_ONLINE_BOOKING", num=0 if self._any(home, BOOKING_HINTS) else 1)
+        # The "site" itself may be a booking app (barberin-x.web.app).
+        has_booking = self._any(home, BOOKING_HINTS) or self._any(site, BOOKING_HINTS)
+        add("NO_ONLINE_BOOKING", num=0 if has_booking else 1)
+        add("WHATSAPP_ONLY_BOOKING",
+            num=1 if not has_booking and self._any(home, WHATSAPP_LINKS) else 0)
 
         # Incumbent agency — the compounding signal
         agency = self.detect_agency(home, domain)
