@@ -80,7 +80,10 @@ harvey leads --nome "Seu Nome" --empresa "Sua Empresa"
   visitar.
 
 As mensagens não usam IA: são montadas por regras, então não custam nada e a
-mesma empresa sempre recebe o mesmo texto. Para mudar o tom, edite
+mesma empresa sempre recebe o mesmo texto. Existem três versões do texto,
+misturadas ao longo da lista, para você não mandar a mesma mensagem para todo
+mundo. A saudação (bom dia, boa tarde, boa noite) segue o relógio do computador
+em que a lista está aberta. Para mudar o tom, edite `STYLES` em
 `harvey/br_messages.py`.
 
 ## Nota de potencial e relatório por nicho

@@ -182,7 +182,7 @@ def test_message_names_the_strongest_signal_and_signs():
     msg = compose_message({"company_name": "Padaria Pão Bom",
                            "signals": "NO_ONLINE_BOOKING;NO_WEBSITE",
                            "rating": 4.7, "review_count": 212},
-                          sender="Tavim", company="TS Sites")
+                          sender="Tavim", company="TS Sites", style=0)
     assert "Padaria Pão Bom" in msg
     assert "Me chamo Tavim, da TS Sites, e trabalho criando sites" in msg
     assert "ainda não têm um site" in msg          # NO_WEBSITE wins
@@ -191,7 +191,27 @@ def test_message_names_the_strongest_signal_and_signs():
     assert msg == compose_message({"company_name": "Padaria Pão Bom",
                                    "signals": "NO_ONLINE_BOOKING;NO_WEBSITE",
                                    "rating": 4.7, "review_count": 212},
-                                  sender="Tavim", company="TS Sites")
+                                  sender="Tavim", company="TS Sites", style=0)
+
+
+def test_three_styles_mix_across_a_list_and_stay_complete():
+    from collections import Counter
+    from harvey.br_messages import STYLES, compose_message, style_index
+    lead = {"company_name": "Salão Bela", "signals": "WHATSAPP_ONLY_BOOKING",
+            "rating": 4.9, "review_count": 80}
+    msgs = [compose_message(lead, sender="Tavim", company="TS Sites", style=i)
+            for i in range(len(STYLES))]
+    assert len(STYLES) == 3 and len(set(msgs)) == 3
+    for m in msgs:
+        assert "Salão Bela" in m and "Tavim, da TS Sites" in m and ",." not in m
+        assert "WhatsApp" in m and "4,9 com 80 avaliações" in m
+        assert "prévia de como ficaria o agendamento online" in m and m.endswith("?")
+    for st in STYLES:                       # every style covers every signal
+        assert set(st["observations"]) == set(STYLES[0]["observations"])
+    names = [f"Empresa {i}" for i in range(300)]
+    assert min(Counter(style_index(n) for n in names).values()) > 70
+    # The same business always gets the same style.
+    assert compose_message(lead) == compose_message(lead)
 
 
 def test_message_greeting_follows_the_clock():
@@ -200,7 +220,7 @@ def test_message_greeting_follows_the_clock():
     assert [greeting(datetime(2026, 1, 1, h)) for h in (4, 5, 11, 12, 17, 18, 23)] == \
         ["Boa noite", "Bom dia", "Bom dia", "Boa tarde", "Boa tarde", "Boa noite", "Boa noite"]
     msg = compose_message({"company_name": "Ótica Sol"}, now=datetime(2026, 1, 1, 9))
-    assert msg.startswith("Bom dia, Ótica Sol!")
+    assert msg.startswith("Bom dia, Ótica Sol")
 
 
 def test_greeting_uses_the_name_a_person_would_say():
@@ -216,9 +236,9 @@ def test_message_without_signals_or_sender_is_still_usable():
     from harvey.br_messages import compose_message, wa_link
     msg = compose_message({"company_name": "Oficina do Zé", "rating": 4.0,
                            "review_count": 3})
-    assert "Me chamo" not in msg and "nota" not in msg
-    assert msg.startswith(("Bom dia, Oficina do Zé!", "Boa tarde, Oficina do Zé!",
-                           "Boa noite, Oficina do Zé!"))
+    assert "Tavim" not in msg and "nota" not in msg
+    assert msg.startswith(("Bom dia, Oficina do Zé", "Boa tarde, Oficina do Zé",
+                           "Boa noite, Oficina do Zé"))
     assert msg.endswith("?") and msg.count("\n\n") == 3
     link = wa_link("+5516991234567", "Oi, tudo bem?")
     assert link == "https://wa.me/5516991234567?text=Oi%2C%20tudo%20bem%3F"
@@ -313,7 +333,7 @@ async def test_signals_recorded_as_false_are_not_pitched_and_score_orders(state)
     by = {r["company_name"]: r for r in rows}
     assert by["Com agenda"]["signals"] == ""
     assert by["Agenda no zap"]["signals"] == "WHATSAPP_ONLY_BOOKING;NO_ONLINE_BOOKING"
-    assert "marcados pelo WhatsApp" in by["Agenda no zap"]["whatsapp_message"]
+    assert "pelo WhatsApp" in by["Agenda no zap"]["whatsapp_message"]
     assert [r["company_name"] for r in rows][-1] == "Com agenda"
     assert by["Sem site"]["score"] == 40 + 12 + 10 + 10
     assert by["Agenda no zap"]["score"] == 30 + 20 + 10 + 10

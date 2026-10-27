@@ -41,7 +41,7 @@ def test_leads_list_sign_and_set_status(client):
 
     assert client.post("/api/leads/sender", json={"name": "Tavim", "company": ""}).json()["success"]
     lead = client.get("/api/leads").json()["leads"][0]
-    assert "Me chamo Tavim e trabalho" in lead["whatsapp_message"]
+    assert "Tavim" in lead["whatsapp_message"]
     assert lead["status"] == "novo"
 
     r = client.post(f"/api/leads/{cid}/status", json={"status": "negociando"}).json()
